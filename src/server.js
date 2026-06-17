@@ -139,16 +139,13 @@ app.get("/ge-classificacao", async (req, res) => {
             ?.textContent?.trim();
           const sigla = row.querySelector(".classificacao__equipes--sigla")
             ?.textContent?.trim();
-          const pts = row.querySelector(
-            ".classificacao__equipes--variacao span"
-          )?.textContent?.trim();
 
           const statRow = statRows[idx + 1];
           let stats = null;
+          let pts = 0;
           if (statRow) {
             const cells = statRow.querySelectorAll("td");
             stats = {
-              pts: cells[0]?.textContent?.trim(),
               jogos: cells[1]?.textContent?.trim(),
               vitorias: cells[2]?.textContent?.trim(),
               empates: cells[3]?.textContent?.trim(),
@@ -158,13 +155,14 @@ app.get("/ge-classificacao", async (req, res) => {
               saldoGols: cells[7]?.textContent?.trim(),
               aproveitamento: cells[8]?.textContent?.trim(),
             };
+            pts = parseInt(cells[0]?.textContent?.trim() || "0");
           }
 
           return {
             pos: pos ? parseInt(pos) : null,
             nome: nome || null,
             sigla: sigla || null,
-            pts: pts ? parseInt(pts) : null,
+            pts,
             stats,
           };
         }).filter((t) => t.nome);
