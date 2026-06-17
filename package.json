@@ -1,0 +1,13 @@
+{
+  "name": "scrap-ge-api",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "playwright": "^1.52.0"
+  }
+}
+}
