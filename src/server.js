@@ -3,6 +3,8 @@ import { chromium } from "playwright";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const CACHE_TTL = 5 * 60 * 1000;
+let cache = { data: null, timestamp: 0 };
 
 app.get("/", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -93,6 +95,11 @@ init();
 });
 
 app.get("/ge-classificacao", async (req, res) => {
+  const now = Date.now();
+  if (cache.data && now - cache.timestamp < CACHE_TTL) {
+    return res.json(cache.data);
+  }
+
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
@@ -189,13 +196,16 @@ app.get("/ge-classificacao", async (req, res) => {
     await browser.close();
     browser = null;
 
-    res.json({
+    const result = {
       url: "https://ge.globo.com/futebol/copa-do-mundo/",
       updatedAt: new Date().toISOString(),
       totalGrupos: grupos.length,
       grupos,
       artilharia: { top5: artilharia },
-    });
+    };
+
+    cache = { data: result, timestamp: Date.now() };
+    res.json(result);
   } catch (err) {
     if (browser) await browser.close().catch(() => {});
     res.status(500).json({
