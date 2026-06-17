@@ -34,6 +34,8 @@ td:nth-child(2){text-align:left;font-weight:500}
 .aprov.alta{color:#16a34a}
 .aprov.media{color:#ca8a04}
 .aprov.baixa{color:#dc2626}
+.grupos h2{margin-bottom:0}
+.grupos .card h2{background:#06AA48}
 .artilharia-wrap{background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:16px;max-width:520px;margin:0 auto}
 .artilharia-wrap h2{font-size:1rem;margin-bottom:10px;color:#1a1a2e}
 .art-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eee}
@@ -71,6 +73,29 @@ async function init(){
         html+='<tr class="'+pClass+'"><td>'+t.pos+'</td><td>'+t.nome+' <span style="color:#999;font-size:0.7rem">'+t.sigla+'</span></td>'
           +'<td><b>'+(t.pts??'-')+'</b></td><td>'+(s.jogos||0)+'</td><td>'+(s.vitorias||0)+'</td><td>'+(s.empates||0)+'</td><td>'+(s.derrotas||0)+'</td>'
           +'<td>'+(s.golsPro||0)+'</td><td>'+(s.golsContra||0)+'</td><td>'+(s.saldoGols||0)+'</td><td class="aprov '+aClass+'">'+(s.aproveitamento||0)+'%</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    });
+    html+='</div>';
+    html+='<h2 style="text-align:center;margin:18px 0 10px;font-size:1.1rem">⚽ Partidas</h2>';
+    html+='<div class="grupos">';
+    const rodadas={};
+    d.jogos.forEach(j=>{
+      if(!rodadas[j.rodada])rodadas[j.rodada]=[];
+      rodadas[j.rodada].push(j);
+    });
+    Object.entries(rodadas).forEach(([rod,jogos])=>{
+      html+='<div class="card"><h2>'+rod+'</h2><table><thead><tr><th>Mandante</th><th></th><th>Placar</th><th></th><th>Visitante</th></tr></thead><tbody>';
+      jogos.forEach(j=>{
+        const hasScore=j.golsMandante!==null;
+        const placar=hasScore?j.golsMandante+' x '+j.golsVisitante:'—';
+        const mWin=hasScore&&j.golsMandante>j.golsVisitante;
+        const vWin=hasScore&&j.golsVisitante>j.golsMandante;
+        html+='<tr><td style="text-align:right;font-weight:500">'+j.mandante.nome+'</td>'
+          +'<td style="text-align:center;color:#999;font-size:0.75rem">'+j.mandante.sigla+'</td>'
+          +'<td style="text-align:center;font-weight:700;font-size:0.95rem;'+(hasScore?'color:#1a1a2e':'')+'">'+placar+'</td>'
+          +'<td style="text-align:center;color:#999;font-size:0.75rem">'+j.visitante.sigla+'</td>'
+          +'<td style="text-align:left;font-weight:500">'+j.visitante.nome+'</td></tr>';
       });
       html+='</tbody></table></div>';
     });
@@ -191,6 +216,54 @@ app.get("/ge-classificacao", async (req, res) => {
       });
     });
 
+    const jogos = await page.evaluate(() => {
+      const sections = document.querySelectorAll(".tabela__lista-jogos");
+      const allJogos = [];
+      const seen = new Set();
+
+      sections.forEach((section) => {
+        const rodada = section
+          .querySelector(".lista-jogos__navegacao--rodada")
+          ?.textContent?.trim();
+        const placarItems = section.querySelectorAll(".placar");
+
+        placarItems.forEach((placar) => {
+          const mandanteSigla = placar
+            .querySelector(".placar__equipes--mandante .equipes__sigla")
+            ?.textContent?.trim();
+          const mandanteNome = placar
+            .querySelector(".placar__equipes--mandante .equipes__nome")
+            ?.textContent?.trim();
+          const visitanteSigla = placar
+            .querySelector(".placar__equipes--visitante .equipes__sigla")
+            ?.textContent?.trim();
+          const visitanteNome = placar
+            .querySelector(".placar__equipes--visitante .equipes__nome")
+            ?.textContent?.trim();
+          const golsM = placar
+            .querySelector(".placar-box__valor--mandante")
+            ?.textContent?.trim();
+          const golsV = placar
+            .querySelector(".placar-box__valor--visitante")
+            ?.textContent?.trim();
+
+          const key = `${mandanteSigla}-${visitanteSigla}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+
+          allJogos.push({
+            rodada,
+            mandante: { sigla: mandanteSigla, nome: mandanteNome },
+            visitante: { sigla: visitanteSigla, nome: visitanteNome },
+            golsMandante: golsM ? parseInt(golsM) : null,
+            golsVisitante: golsV ? parseInt(golsV) : null,
+          });
+        });
+      });
+
+      return allJogos;
+    });
+
     await browser.close();
     browser = null;
 
@@ -199,6 +272,7 @@ app.get("/ge-classificacao", async (req, res) => {
       updatedAt: new Date().toISOString(),
       totalGrupos: grupos.length,
       grupos,
+      jogos,
       artilharia: { top5: artilharia },
     };
 
