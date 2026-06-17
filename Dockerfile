@@ -1,6 +1,4 @@
-FROM node:20-slim
-
-RUN npx playwright install --with-deps chromium
+FROM mcr.microsoft.com/playwright:v1.61.0-noble
 
 WORKDIR /app
 COPY package*.json ./
