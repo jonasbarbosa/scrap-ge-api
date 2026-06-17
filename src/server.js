@@ -6,6 +6,14 @@ const PORT = process.env.PORT || 3000;
 const CACHE_TTL = 5 * 60 * 1000;
 let cache = { data: null, timestamp: 0 };
 
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.get("/", (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="pt-BR">
