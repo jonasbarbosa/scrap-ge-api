@@ -85,17 +85,25 @@ async function init(){
       rodadas[j.rodada].push(j);
     });
     Object.entries(rodadas).forEach(([rod,jogos])=>{
-      html+='<div class="card"><h2>'+rod+'</h2><table><thead><tr><th>Mandante</th><th></th><th>Placar</th><th></th><th>Visitante</th></tr></thead><tbody>';
+      html+='<div class="card"><h2>'+rod+'</h2><table><thead><tr><th>Mandante</th><th></th><th>Placar</th><th></th><th>Visitante</th><th>Local</th><th>Data/Hora</th></tr></thead><tbody>';
       jogos.forEach(j=>{
         const hasScore=j.golsMandante!==null;
         const placar=hasScore?j.golsMandante+' x '+j.golsVisitante:'—';
-        const mWin=hasScore&&j.golsMandante>j.golsVisitante;
-        const vWin=hasScore&&j.golsVisitante>j.golsMandante;
+        let dtStr='—';
+        if(j.startDate){
+          const dt=new Date(j.startDate);
+          dtStr=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+        }else if(j.hora){
+          dtStr=(j.dataLabel||'')+' '+j.hora;
+        }
+        const local=j.local||'—';
         html+='<tr><td style="text-align:right;font-weight:500">'+j.mandante.nome+'</td>'
           +'<td style="text-align:center;color:#999;font-size:0.75rem">'+j.mandante.sigla+'</td>'
           +'<td style="text-align:center;font-weight:700;font-size:0.95rem;'+(hasScore?'color:#1a1a2e':'')+'">'+placar+'</td>'
           +'<td style="text-align:center;color:#999;font-size:0.75rem">'+j.visitante.sigla+'</td>'
-          +'<td style="text-align:left;font-weight:500">'+j.visitante.nome+'</td></tr>';
+          +'<td style="text-align:left;font-weight:500">'+j.visitante.nome+'</td>'
+          +'<td style="text-align:center;font-size:0.78rem;color:#555">'+local+'</td>'
+          +'<td style="text-align:center;font-size:0.78rem;color:#555;white-space:nowrap">'+dtStr+'</td></tr>';
       });
       html+='</tbody></table></div>';
     });
@@ -255,12 +263,31 @@ app.get("/ge-classificacao", async (req, res) => {
           if (seen.has(key)) return;
           seen.add(key);
 
+          const startDate = placar
+            .querySelector('meta[itemprop="startDate"]')
+            ?.getAttribute("content");
+
+          const link = placar.closest("a[href]");
+          const local = link
+            ?.querySelector(".jogo__informacoes--local")
+            ?.textContent?.trim();
+          const dataLabel = link
+            ?.querySelector(".jogo__informacoes--data")
+            ?.textContent?.trim();
+          const hora = link
+            ?.querySelector(".jogo__informacoes--hora")
+            ?.textContent?.trim();
+
           allJogos.push({
             rodada,
             mandante: { sigla: mandanteSigla, nome: mandanteNome },
             visitante: { sigla: visitanteSigla, nome: visitanteNome },
             golsMandante: golsM ? parseInt(golsM) : null,
             golsVisitante: golsV ? parseInt(golsV) : null,
+            startDate: startDate || null,
+            local: local || null,
+            dataLabel: dataLabel || null,
+            hora: hora || null,
           });
         });
       });
