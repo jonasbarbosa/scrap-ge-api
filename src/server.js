@@ -55,7 +55,8 @@ async function init(){
     const r=await fetch('/ge-classificacao');
     const d=await r.json();
     const sub=document.getElementById('subtitle');
-    sub.textContent='Classificação · Grupos A–L · Dados do ge.globo';
+    const dt=new Date(d.updatedAt);
+    sub.textContent='Atualizado em '+dt.toLocaleString('pt-BR')+' · Dados do ge.globo';
     const app=document.getElementById('app');
     app.className='';
     let html='<div class="grupos">';
@@ -190,6 +191,7 @@ app.get("/ge-classificacao", async (req, res) => {
 
     res.json({
       url: "https://ge.globo.com/futebol/copa-do-mundo/",
+      updatedAt: new Date().toISOString(),
       totalGrupos: grupos.length,
       grupos,
       artilharia: { top5: artilharia },
