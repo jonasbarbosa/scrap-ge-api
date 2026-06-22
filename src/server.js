@@ -413,7 +413,13 @@ async function scrape() {
           if (broadcast?.includes("tempo real")) {
             status = "ao-vivo";
           } else if (broadcast?.includes("saiba como foi")) {
-            status = "finalizado";
+            // Buffer: keep ao-vivo during acrescimos (~15 min)
+            if (startDate) {
+              const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
+              status = elapsed > 105 ? "finalizado" : "ao-vivo";
+            } else {
+              status = "finalizado";
+            }
           }
 
           allJogos.push({
