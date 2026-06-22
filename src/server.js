@@ -3,9 +3,11 @@ import { chromium } from "playwright";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { Client, Databases, ID, Query } from "node-appwrite";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const CACHE_TTL = 5 * 60 * 1000;
 const DATA_DIR = join(__dirname, "..", "data");
@@ -13,11 +15,177 @@ const PARTIDAS_FILE = join(DATA_DIR, "partidas.json");
 
 let cache = { data: null, timestamp: 0 };
 
+// ── Appwrite config (optional — sync enabled when all vars are set) ──
+
+const AW_ENDPOINT = process.env.APPWRITE_ENDPOINT || "https://appwrite.letsgo.ctqs.com.br/v1";
+const AW_PROJECT = process.env.APPWRITE_PROJECT || "";
+const AW_API_KEY = process.env.APPWRITE_API_KEY || "";
+const AW_DB_ID = process.env.APPWRITE_DATABASE_ID || "pitaco2026";
+const AW_COLLECTION_ID = process.env.APPWRITE_COLLECTION_ID || "partidas";
+const AW_SYNC_ENABLED = !!(AW_PROJECT && AW_API_KEY);
+
+let awDatabases = null;
+if (AW_SYNC_ENABLED) {
+  const awClient = new Client()
+    .setEndpoint(AW_ENDPOINT)
+    .setProject(AW_PROJECT)
+    .setKey(AW_API_KEY);
+  awDatabases = new Databases(awClient);
+  console.log("[appwrite] sync enabled — endpoint:", AW_ENDPOINT);
+}
+
+// Team name alignment between GE and Appwrite
+const GE_TO_APPWRITE_TEAM = {
+  "República Tcheca": "Tchéquia",
+  "Bósnia": "Bósnia e Herzegovina",
+  "RD Congo": "República Democrática do Congo",
+};
+
+function mapNome(nome) {
+  return GE_TO_APPWRITE_TEAM[nome] || nome;
+}
+
+const GROUP_TEAMS = {
+  A: ["México", "Coreia do Sul", "Tchéquia", "África do Sul"],
+  B: ["Canadá", "Bósnia e Herzegovina", "Catar", "Suíça"],
+  C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
+  D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
+  E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
+  F: ["Holanda", "Japão", "Suécia", "Tunísia"],
+  G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
+  H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
+  I: ["França", "Senegal", "Iraque", "Noruega"],
+  J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
+  K: ["Portugal", "República Democrática do Congo", "Uzbequistão", "Colômbia"],
+  L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
+};
+
+function findGroup(team1, team2) {
+  for (const [group, teams] of Object.entries(GROUP_TEAMS)) {
+    if (teams.includes(team1) && teams.includes(team2)) return group;
+  }
+  return "";
+}
+
+function parseGeDate(raw) {
+  if (!raw) return new Date().toISOString();
+  const parts = raw.split("T");
+  if (parts.length !== 2) return raw;
+  const [datePart, timePart] = parts;
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = timePart.split(":").map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day, hour + 3, minute));
+  return utc.toISOString();
+}
+
+// ── Appwrite sync ──────────────────────────────────────────────────
+
+async function syncToAppwrite(jogos) {
+  if (!AW_SYNC_ENABLED) {
+    console.log("[appwrite] sync skipped — missing APPWRITE_PROJECT or APPWRITE_API_KEY");
+    return { atualizadas: 0, criadas: 0, erros: [] };
+  }
+
+  const result = { atualizadas: 0, criadas: 0, erros: [] };
+  let existing = [];
+
+  try {
+    let offset = 0;
+    const limit = 100;
+    while (true) {
+      const res = await awDatabases.listDocuments(AW_DB_ID, AW_COLLECTION_ID, [
+        Query.limit(limit),
+        Query.offset(offset),
+      ]);
+      existing = existing.concat(res.documents);
+      if (res.documents.length < limit) break;
+      offset += limit;
+    }
+  } catch (err) {
+    result.erros.push(`Erro ao buscar documentos existentes: ${err.message}`);
+    return result;
+  }
+
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+  const rateLimitedUpdate = async (docId, data, attempt = 1) => {
+    try {
+      await awDatabases.updateDocument(AW_DB_ID, AW_COLLECTION_ID, docId, data);
+    } catch (err) {
+      if (err.code === 429 && attempt <= 5) {
+        const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        await delay(backoff);
+        return rateLimitedUpdate(docId, data, attempt + 1);
+      }
+      throw err;
+    }
+  };
+
+  const rateLimitedCreate = async (data, attempt = 1) => {
+    try {
+      await awDatabases.createDocument(AW_DB_ID, AW_COLLECTION_ID, ID.unique(), data);
+    } catch (err) {
+      if (err.code === 429 && attempt <= 5) {
+        const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        await delay(backoff);
+        return rateLimitedCreate(data, attempt + 1);
+      }
+      throw err;
+    }
+  };
+
+  for (const jogo of jogos) {
+    const nomeTime1 = mapNome(jogo.time1);
+    const nomeTime2 = mapNome(jogo.time2);
+    const placar1 = jogo.placar1;
+    const placar2 = jogo.placar2;
+    const status = jogo.status;
+    const dataUtc = parseGeDate(jogo.data);
+    const grupoRaw = jogo.grupo || "";
+    const grupo = grupoRaw.startsWith("Grupo ") ? grupoRaw.replace("Grupo ", "") : findGroup(nomeTime1, nomeTime2);
+
+    const match = existing.find((p) => {
+      const match1 = p.time1 === nomeTime1 && p.time2 === nomeTime2;
+      const match2 = p.time1 === nomeTime2 && p.time2 === nomeTime1;
+      return match1 || match2;
+    });
+
+    if (match) {
+      if (match.placar1 === placar1 && match.placar2 === placar2 && match.status === status && match.data === dataUtc) continue;
+      try {
+        await rateLimitedUpdate(match.$id, { placar1, placar2, status, data: dataUtc });
+        result.atualizadas++;
+        console.log(`[appwrite] atualizada: ${nomeTime1} vs ${nomeTime2} → ${placar1}x${placar2} (${status})`);
+      } catch (err) {
+        result.erros.push(`Erro ao atualizar ${nomeTime1} vs ${nomeTime2}: ${err.message}`);
+      }
+    } else {
+      try {
+        await rateLimitedCreate({
+          time1: nomeTime1,
+          time2: nomeTime2,
+          grupo,
+          fase: "grupos",
+          data: dataUtc,
+          placar1,
+          placar2,
+          status,
+        });
+        result.criadas++;
+        console.log(`[appwrite] criada: ${nomeTime1} vs ${nomeTime2}`);
+      } catch (err) {
+        result.erros.push(`Erro ao criar ${nomeTime1} vs ${nomeTime2}: ${err.message}`);
+      }
+    }
+  }
+
+  return result;
+}
+
 // ── CORS & Cache headers ─────────────────────────────────────────
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   if (req.method === "OPTIONS") return res.sendStatus(204);
@@ -416,6 +584,20 @@ init();
   return html;
 }
 
+// ── Appwrite sync endpoint (manual trigger) ───────────────────────
+
+app.post("/sync-appwrite", async (req, res) => {
+  if (!AW_SYNC_ENABLED) {
+    return res.status(400).json({ error: "Appwrite sync not configured. Set APPWRITE_PROJECT and APPWRITE_API_KEY." });
+  }
+  const jogos = loadPartidas();
+  if (jogos.length === 0) {
+    return res.status(400).json({ error: "No match data available. Wait for the first scrape to complete." });
+  }
+  const result = await syncToAppwrite(jogos);
+  res.json(result);
+});
+
 // ── Routes ────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
@@ -438,6 +620,18 @@ app.get("/ge-classificacao", async (req, res) => {
     const existing = loadPartidas();
     const merged = mergePartidas(existing, jogosRaw);
     savePartidas(merged);
+
+    // Sync to Appwrite server-side (no user auth needed)
+    if (AW_SYNC_ENABLED) {
+      syncToAppwrite(merged).then((r) => {
+        if (r.atualizadas > 0 || r.criadas > 0) {
+          console.log(`[appwrite] sync concluído: ${r.atualizadas} atualizadas, ${r.criadas} criadas`);
+        }
+        if (r.erros.length > 0) {
+          console.warn(`[appwrite] ${r.erros.length} erro(s):`, r.erros.slice(0, 3).join("; "));
+        }
+      }).catch((err) => console.error("[appwrite] sync error:", err.message));
+    }
 
     const result = {
       url: "https://ge.globo.com/futebol/copa-do-mundo/",
