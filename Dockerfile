@@ -2,6 +2,7 @@ FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
+    curl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
