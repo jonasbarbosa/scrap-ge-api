@@ -419,6 +419,9 @@ init();
 // ── Routes ────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
+  if (!cache.data) {
+    return res.type("html").send(renderHtml({ updatedAt: new Date().toISOString(), grupos: [], jogos: [], artilharia: { top5: [] } }));
+  }
   res.type("html").send(renderHtml(cache.data));
 });
 
