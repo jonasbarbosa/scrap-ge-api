@@ -13,6 +13,17 @@ const PARTIDAS_FILE = join(DATA_DIR, "partidas.json");
 
 let cache = { data: null, timestamp: 0 };
 
+// ── CORS & Cache headers ─────────────────────────────────────────
+
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // ── Data persistence ──────────────────────────────────────────────
 
 if (!existsSync(DATA_DIR)) {
