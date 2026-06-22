@@ -495,7 +495,14 @@ app.get("/grupos", async (req, res) => {
     const { grupos } = await scrape();
 
     cache = {
-      data: { ...cache.data, grupos, updatedAt: new Date().toISOString() },
+      data: {
+        url: null,
+        totalGrupos: grupos.length,
+        grupos,
+        jogos: cache.data?.jogos || [],
+        artilharia: cache.data?.artilharia || { top5: [] },
+        updatedAt: new Date().toISOString(),
+      },
       timestamp: Date.now(),
     };
 
