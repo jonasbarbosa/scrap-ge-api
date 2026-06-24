@@ -718,8 +718,41 @@ app.get("/grupos", async (req, res) => {
   }
 });
 
+// ── Background polling ────────────────────────────────────────────
+
+const POLL_INTERVAL = 5 * 60 * 1000;
+
+async function pollScrape() {
+  try {
+    const { grupos, artilharia, jogosRaw } = await scrape();
+    const existing = loadPartidas();
+    const merged = mergePartidas(existing, jogosRaw);
+    savePartidas(merged);
+
+    cache = {
+      data: {
+        url: "https://ge.globo.com/futebol/copa-do-mundo/",
+        updatedAt: new Date().toISOString(),
+        totalGrupos: grupos.length,
+        grupos,
+        jogos: merged,
+        artilharia: { top5: artilharia },
+      },
+      timestamp: Date.now(),
+    };
+
+    console.log(`[poll] ${new Date().toLocaleTimeString("pt-BR")} — ${merged.length} partidas atualizadas`);
+  } catch (err) {
+    console.error(`[poll] ${new Date().toLocaleTimeString("pt-BR")} — erro: ${err.message}`);
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Initial scrape on startup, then every 5 minutes
+  pollScrape();
+  setInterval(pollScrape, POLL_INTERVAL);
 });
