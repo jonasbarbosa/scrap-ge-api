@@ -720,7 +720,15 @@ app.get("/grupos", async (req, res) => {
 
 // ── Background polling ────────────────────────────────────────────
 
-const POLL_INTERVAL = 5 * 60 * 1000;
+const POLL_NORMAL = 5 * 60 * 1000;   // 5 min when no live games
+const POLL_LIVE = 60 * 1000;          // 1 min when games are live
+let currentInterval = POLL_NORMAL;
+let pollTimer = null;
+
+function hasLiveMatches() {
+  if (!cache.data?.jogos) return false;
+  return cache.data.jogos.some((j) => j.status === "ao-vivo");
+}
 
 async function pollScrape() {
   try {
@@ -741,9 +749,19 @@ async function pollScrape() {
       timestamp: Date.now(),
     };
 
-    console.log(`[poll] ${new Date().toLocaleTimeString("pt-BR")} — ${merged.length} partidas atualizadas`);
+    const liveCount = merged.filter((j) => j.status === "ao-vivo").length;
+    console.log(`[poll] ${new Date().toLocaleTimeString("pt-BR")} — ${merged.length} partidas, ${liveCount} ao vivo`);
   } catch (err) {
     console.error(`[poll] ${new Date().toLocaleTimeString("pt-BR")} — erro: ${err.message}`);
+  }
+
+  // Adjust interval: 1min if live, 5min otherwise
+  const newInterval = hasLiveMatches() ? POLL_LIVE : POLL_NORMAL;
+  if (newInterval !== currentInterval) {
+    currentInterval = newInterval;
+    clearInterval(pollTimer);
+    pollTimer = setInterval(pollScrape, currentInterval);
+    console.log(`[poll] intervalo alterado para ${currentInterval / 1000}s`);
   }
 }
 
@@ -752,7 +770,8 @@ async function pollScrape() {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
-  // Initial scrape on startup, then every 5 minutes
-  pollScrape();
-  setInterval(pollScrape, POLL_INTERVAL);
+  // Initial scrape, then adaptive polling
+  pollScrape().then(() => {
+    pollTimer = setInterval(pollScrape, currentInterval);
+  });
 });
