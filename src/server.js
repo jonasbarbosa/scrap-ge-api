@@ -353,97 +353,173 @@ async function scrape() {
     // Extract group names in order for section→group mapping
     const grupoNames = grupos.map((g) => g.grupo);
 
-    const jogosRaw = await page.evaluate((grupoNames) => {
-      const sections = document.querySelectorAll(".tabela__lista-jogos");
-      const allJogos = [];
-      const seen = new Set();
+    // ── Navigate all rounds per group to capture historical matches ──
+    const allJogosMap = new Map(); // key → jogo object
 
-      sections.forEach((section, sectionIdx) => {
-        const rodada = section
-          .querySelector(".lista-jogos__navegacao--rodada")
-          ?.textContent?.trim();
-        const grupo = grupoNames[sectionIdx] || null;
-        const placarItems = section.querySelectorAll(".placar");
+    async function extractCurrentJogos(grupoNames) {
+      return await page.evaluate((grupoNames) => {
+        const sections = document.querySelectorAll(".tabela__lista-jogos");
+        const jogos = [];
 
-        placarItems.forEach((placar) => {
-          const mandanteSigla = placar
-            .querySelector(".placar__equipes--mandante .equipes__sigla")
+        sections.forEach((section, sectionIdx) => {
+          const rodada = section
+            .querySelector(".lista-jogos__navegacao--rodada")
             ?.textContent?.trim();
-          const mandanteNome = placar
-            .querySelector(".placar__equipes--mandante .equipes__nome")
-            ?.textContent?.trim();
-          const visitanteSigla = placar
-            .querySelector(".placar__equipes--visitante .equipes__sigla")
-            ?.textContent?.trim();
-          const visitanteNome = placar
-            .querySelector(".placar__equipes--visitante .equipes__nome")
-            ?.textContent?.trim();
-          const golsM = placar
-            .querySelector(".placar-box__valor--mandante")
-            ?.textContent?.trim();
-          const golsV = placar
-            .querySelector(".placar-box__valor--visitante")
-            ?.textContent?.trim();
+          const grupo = grupoNames[sectionIdx] || null;
+          const placarItems = section.querySelectorAll(".placar");
 
-          const key = `${mandanteSigla}-${visitanteSigla}`;
-          if (seen.has(key)) return;
-          seen.add(key);
+          placarItems.forEach((placar) => {
+            const mandanteSigla = placar
+              .querySelector(".placar__equipes--mandante .equipes__sigla")
+              ?.textContent?.trim();
+            const mandanteNome = placar
+              .querySelector(".placar__equipes--mandante .equipes__nome")
+              ?.textContent?.trim();
+            const visitanteSigla = placar
+              .querySelector(".placar__equipes--visitante .equipes__sigla")
+              ?.textContent?.trim();
+            const visitanteNome = placar
+              .querySelector(".placar__equipes--visitante .equipes__nome")
+              ?.textContent?.trim();
+            const golsM = placar
+              .querySelector(".placar-box__valor--mandante")
+              ?.textContent?.trim();
+            const golsV = placar
+              .querySelector(".placar-box__valor--visitante")
+              ?.textContent?.trim();
 
-          const startDate = placar
-            .querySelector('meta[itemprop="startDate"]')
-            ?.getAttribute("content");
+            const key = `${mandanteSigla}-${visitanteSigla}`;
 
-          const link = placar.closest("a[href]");
-          const local = link
-            ?.querySelector(".jogo__informacoes--local")
-            ?.textContent?.trim();
-          const dataLabel = link
-            ?.querySelector(".jogo__informacoes--data")
-            ?.textContent?.trim();
-          const hora = link
-            ?.querySelector(".jogo__informacoes--hora")
-            ?.textContent?.trim();
+            const startDate = placar
+              .querySelector('meta[itemprop="startDate"]')
+              ?.getAttribute("content");
 
-          // Detect status from broadcast label
-          const broadcast = link
-            ?.querySelector(".jogo__transmissao--broadcast")
-            ?.textContent?.trim()
-            ?.toLowerCase();
-          let status = "agendado";
-          if (broadcast?.includes("tempo real")) {
-            status = "ao-vivo";
-          } else if (broadcast?.includes("saiba como foi")) {
-            // Buffer: keep ao-vivo during acrescimos (~15 min)
-            if (startDate) {
-              const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
-              status = elapsed > 105 ? "finalizado" : "ao-vivo";
-            } else {
-              status = "finalizado";
+            const link = placar.closest("a[href]");
+            const local = link
+              ?.querySelector(".jogo__informacoes--local")
+              ?.textContent?.trim();
+            const dataLabel = link
+              ?.querySelector(".jogo__informacoes--data")
+              ?.textContent?.trim();
+            const hora = link
+              ?.querySelector(".jogo__informacoes--hora")
+              ?.textContent?.trim();
+
+            const broadcast = link
+              ?.querySelector(".jogo__transmissao--broadcast")
+              ?.textContent?.trim()
+              ?.toLowerCase();
+            let status = "agendado";
+            if (broadcast?.includes("tempo real")) {
+              status = "ao-vivo";
+            } else if (broadcast?.includes("saiba como foi")) {
+              if (startDate) {
+                const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
+                status = elapsed > 105 ? "finalizado" : "ao-vivo";
+              } else {
+                status = "finalizado";
+              }
             }
-          }
 
-          allJogos.push({
-            id: key,
-            time1: mandanteNome,
-            time2: visitanteNome,
-            sigla1: mandanteSigla,
-            sigla2: visitanteSigla,
-            placar1: golsM ? parseInt(golsM) : null,
-            placar2: golsV ? parseInt(golsV) : null,
-            status,
-            fase: "grupos",
-            grupo,
-            data: startDate || null,
-            rodada: rodada || null,
-            local: local || null,
-            dataLabel: dataLabel || null,
-            hora: hora || null,
+            jogos.push({
+              id: key,
+              time1: mandanteNome,
+              time2: visitanteNome,
+              sigla1: mandanteSigla,
+              sigla2: visitanteSigla,
+              placar1: golsM ? parseInt(golsM) : null,
+              placar2: golsV ? parseInt(golsV) : null,
+              status,
+              fase: "grupos",
+              grupo,
+              data: startDate || null,
+              rodada: rodada || null,
+              local: local || null,
+              dataLabel: dataLabel || null,
+              hora: hora || null,
+            });
           });
         });
-      });
 
-      return allJogos;
-    }, grupoNames);
+        return jogos;
+      }, grupoNames);
+    }
+
+    // Helper: click all "previous" arrows to go back to round 1
+    async function navigateToFirstRound() {
+      let clicked = true;
+      let maxAttempts = 10; // safety limit
+      while (clicked && maxAttempts > 0) {
+        clicked = await page.evaluate(() => {
+          const arrows = document.querySelectorAll(
+            ".lista-jogos__navegacao--seta-esquerda"
+          );
+          let didClick = false;
+          arrows.forEach((arrow) => {
+            if (arrow && arrow.classList.contains("lista-jogos__navegacao--setas-ativa")) {
+              arrow.click();
+              didClick = true;
+            }
+          });
+          return didClick;
+        });
+        if (clicked) {
+          await page.waitForTimeout(1000); // wait for content to load
+          maxAttempts--;
+        }
+      }
+    }
+
+    // Helper: click all "next" arrows once
+    async function clickNextRounds() {
+      return await page.evaluate(() => {
+        const arrows = document.querySelectorAll(
+          ".lista-jogos__navegacao--seta-direita"
+        );
+        let didClick = false;
+        arrows.forEach((arrow) => {
+          if (arrow && arrow.classList.contains("lista-jogos__navegacao--setas-ativa")) {
+            arrow.click();
+            didClick = true;
+          }
+        });
+        return didClick;
+      });
+    }
+
+    // Step 1: Go back to round 1 for all groups
+    console.log("[scrape] navegando para rodada 1...");
+    await navigateToFirstRound();
+
+    // Step 2: Collect matches from round 1
+    const round1Jogos = await extractCurrentJogos(grupoNames);
+    for (const j of round1Jogos) {
+      allJogosMap.set(j.id, j);
+    }
+    console.log(`[scrape] rodada 1: ${round1Jogos.length} partidas`);
+
+    // Step 3: Navigate forward and collect each round
+    let hasMore = true;
+    let roundCount = 1;
+    while (hasMore && roundCount < 10) { // max 10 rounds
+      hasMore = await clickNextRounds();
+      if (hasMore) {
+        await page.waitForTimeout(800);
+        const roundJogos = await extractCurrentJogos(grupoNames);
+        let newCount = 0;
+        for (const j of roundJogos) {
+          if (!allJogosMap.has(j.id)) {
+            newCount++;
+          }
+          allJogosMap.set(j.id, j); // update or add
+        }
+        roundCount++;
+        console.log(`[scrape] rodada ${roundCount}: ${roundJogos.length} partidas (${newCount} novas)`);
+      }
+    }
+
+    const jogosRaw = Array.from(allJogosMap.values());
+    console.log(`[scrape] total: ${jogosRaw.length} partidas únicas`);
 
     return { grupos, artilharia, jogosRaw };
   } finally {
