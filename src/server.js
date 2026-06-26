@@ -261,8 +261,8 @@ async function scrape() {
     });
     const page = await context.newPage();
     await page.goto("https://ge.globo.com/futebol/copa-do-mundo/", {
-      waitUntil: "load",
-      timeout: 30000,
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
     });
     await page.waitForTimeout(5000);
 
@@ -727,6 +727,11 @@ app.get("/ge-classificacao", async (req, res) => {
     cache = { data: result, timestamp: Date.now() };
     res.json(result);
   } catch (err) {
+    console.error("[ge-classificacao] scrape error:", err.message);
+    // Stale cache fallback — serve expired data rather than 500
+    if (cache.data) {
+      return res.json({ ...cache.data, stale: true, updatedAt: cache.data.updatedAt });
+    }
     res.status(500).json({
       error: "Failed to fetch classification",
       detail: err.message,
