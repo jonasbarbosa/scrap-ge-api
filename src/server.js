@@ -797,7 +797,7 @@ app.get("/grupos", async (req, res) => {
 // ── Background polling ────────────────────────────────────────────
 
 const POLL_NORMAL = 5 * 60 * 1000;   // 5 min when no live games
-const POLL_LIVE = 60 * 1000;          // 1 min when games are live
+const POLL_LIVE = 120 * 1000;          // 2 min when games are live
 let currentInterval = POLL_NORMAL;
 let pollTimer = null;
 
@@ -812,6 +812,18 @@ async function pollScrape() {
     const existing = loadPartidas();
     const merged = mergePartidas(existing, jogosRaw);
     savePartidas(merged);
+
+    // Sync to Appwrite automatically
+    if (AW_SYNC_ENABLED) {
+      syncToAppwrite(merged).then((r) => {
+        if (r.atualizadas > 0 || r.criadas > 0) {
+          console.log(`[poll][appwrite] ${r.atualizadas} atualizadas, ${r.criadas} criadas`);
+        }
+        if (r.erros.length > 0) {
+          console.warn(`[poll][appwrite] ${r.erros.length} erro(s):`, r.erros.slice(0, 3).join("; "));
+        }
+      }).catch((err) => console.error("[poll][appwrite] sync error:", err.message));
+    }
 
     cache = {
       data: {
