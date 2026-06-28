@@ -82,8 +82,20 @@ function findGroup(team1, team2) {
 
 function parseGeDate(raw) {
   if (!raw) return new Date().toISOString();
+
+  // Handle date-only format (e.g., "2026-06-28") — no time available
+  if (!raw.includes('T')) {
+    const [year, month, day] = raw.split('-').map(Number);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      // Assume midnight BRT (UTC-3 = 03:00 UTC) as fallback
+      const utc = new Date(Date.UTC(year, month - 1, day, 3, 0));
+      return utc.toISOString();
+    }
+    return new Date().toISOString();
+  }
+
   const parts = raw.split("T");
-  if (parts.length !== 2) return raw;
+  if (parts.length !== 2) return new Date().toISOString();
   const [datePart, timePart] = parts;
   const [year, month, day] = datePart.split("-").map(Number);
   const [hour, minute] = timePart.split(":").map(Number);
@@ -388,8 +400,13 @@ async function scrape() {
               status = "ao-vivo";
             } else if (broadcast?.includes("saiba como foi")) {
               if (startDate) {
-                const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
-                status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                const matchTime = new Date(startDate).getTime();
+                if (isNaN(matchTime)) {
+                  status = "finalizado";
+                } else {
+                  const elapsed = (Date.now() - matchTime) / 60000;
+                  status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                }
               } else {
                 status = "finalizado";
               }
@@ -515,8 +532,13 @@ const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute
               status = "ao-vivo";
             } else if (broadcast?.includes("saiba como foi")) {
               if (startDate) {
-                const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
-                status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                const matchTime = new Date(startDate).getTime();
+                if (isNaN(matchTime)) {
+                  status = "finalizado";
+                } else {
+                  const elapsed = (Date.now() - matchTime) / 60000;
+                  status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                }
               } else {
                 status = "finalizado";
               }
