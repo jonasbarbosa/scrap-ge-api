@@ -897,6 +897,26 @@ td:nth-child(2){text-align:left;font-weight:500}
 <p class="sub" id="subtitle">Atualizado em ${dtStr} - Dados do ge.globo</p>
 <div id="app" class="loading">Buscando dados...</div>
 <script>
+function formatBrazilDateTimeClient(raw, fallbackLabel, fallbackHour){
+  if(raw){
+    const date = new Date(raw);
+    if(!isNaN(date.getTime())){
+      return date.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        timeZone: 'America/Bahia',
+      }) + ' ' + date.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'America/Bahia',
+      });
+    }
+  }
+  if(fallbackHour) return ((fallbackLabel || '') + ' ' + fallbackHour).trim();
+  return '—';
+}
+
 async function init(){
   try{
     const r=await fetch('/ge-classificacao');
@@ -932,7 +952,7 @@ async function init(){
       jogos.forEach(j=>{
         const hasScore=j.placar1!==null;
         const placar=hasScore?j.placar1+' x '+j.placar2:'—';
-        const dtStr=formatBrazilDateTime(j.data, j.dataLabel, j.hora);
+        const dtStr=formatBrazilDateTimeClient(j.data, j.dataLabel, j.hora);
         const local=j.local||'—';
         const sc=j.status||'agendado';
         const badgeClass=sc==='ao-vivo'?'ao-vivo':sc==='finalizado'?'finalizado':'agendado';
