@@ -395,8 +395,13 @@ async function scrape() {
               status = "ao-vivo";
             } else if (broadcast?.includes("saiba como foi")) {
               if (startDate) {
-                const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
-                status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                const matchTime = new Date(startDate).getTime();
+                if (isNaN(matchTime)) {
+                  status = "finalizado";
+                } else {
+                  const elapsed = (Date.now() - matchTime) / 60000;
+                  status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                }
               } else {
                 status = "finalizado";
               }
@@ -498,8 +503,13 @@ async function scrape() {
               status = "ao-vivo";
             } else if (broadcast?.includes("saiba como foi")) {
               if (startDate) {
-                const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
-                status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                const matchTime = new Date(startDate).getTime();
+                if (isNaN(matchTime)) {
+                  status = "finalizado";
+                } else {
+                  const elapsed = (Date.now() - matchTime) / 60000;
+                  status = elapsed > 105 ? "finalizado" : "ao-vivo";
+                }
               } else {
                 status = "finalizado";
               }
