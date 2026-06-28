@@ -81,7 +81,7 @@ function findGroup(team1, team2) {
 }
 
 function parseGeDate(raw) {
-  if (!raw) return new Date().toISOString();
+  if (!raw) return null;
 
   // Handle date-only format (e.g., "2026-06-28") — no time available
   if (!raw.includes('T')) {
@@ -91,16 +91,34 @@ function parseGeDate(raw) {
       const utc = new Date(Date.UTC(year, month - 1, day, 3, 0));
       return utc.toISOString();
     }
-    return new Date().toISOString();
+    return null;
   }
 
   const parts = raw.split("T");
-  if (parts.length !== 2) return new Date().toISOString();
+  if (parts.length !== 2) return null;
   const [datePart, timePart] = parts;
   const [year, month, day] = datePart.split("-").map(Number);
   const [hour, minute] = timePart.split(":").map(Number);
+  if ([year, month, day, hour, minute].some((part) => Number.isNaN(part))) return null;
   const utc = new Date(Date.UTC(year, month - 1, day, hour + 3, minute));
   return utc.toISOString();
+}
+
+function buildMatchKey(fase, time1, time2) {
+  const [a, b] = [time1, time2].sort((x, y) => x.localeCompare(y));
+  return `${fase || "grupos"}|${a}|${b}`;
+}
+
+function matchScore(doc) {
+  if (doc.placar1 != null && doc.placar2 != null) return 2;
+  if (doc.placar1 != null || doc.placar2 != null) return 1;
+  return 0;
+}
+
+function getUpdatedAt(doc) {
+  const value = doc.$updatedAt || doc.$createdAt;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isNaN(time) ? 0 : time;
 }
 
 // ── Appwrite sync ──────────────────────────────────────────────────
@@ -158,6 +176,71 @@ async function syncToAppwrite(jogos) {
     }
   };
 
+  const rateLimitedDelete = async (docId, attempt = 1) => {
+    try {
+      await awDatabases.deleteDocument(AW_DB_ID, AW_COLLECTION_ID, docId);
+    } catch (err) {
+      if (err.code === 429 && attempt <= 5) {
+        const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        await delay(backoff);
+        return rateLimitedDelete(docId, attempt + 1);
+      }
+      throw err;
+    }
+  };
+
+  const invalidScheduledKeys = new Set();
+  for (const jogo of jogos) {
+    if (!jogo.time1 || !jogo.time2) continue;
+    const nomeTime1 = mapNome(jogo.time1);
+    const nomeTime2 = mapNome(jogo.time2);
+    const fase = jogo.fase || "grupos";
+    if (!parseGeDate(jogo.data)) {
+      invalidScheduledKeys.add(buildMatchKey(fase, nomeTime1, nomeTime2));
+    }
+  }
+
+  const idsToDelete = new Set();
+
+  for (const doc of existing) {
+    const key = buildMatchKey(doc.fase || "grupos", doc.time1, doc.time2);
+    if (doc.status === "agendado" && invalidScheduledKeys.has(key)) {
+      idsToDelete.add(doc.$id);
+    }
+  }
+
+  const groups = new Map();
+  for (const doc of existing) {
+    const key = buildMatchKey(doc.fase || "grupos", doc.time1, doc.time2);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(doc);
+  }
+
+  for (const docs of groups.values()) {
+    const remaining = docs.filter((doc) => !idsToDelete.has(doc.$id));
+    if (remaining.length <= 1) continue;
+    remaining
+      .sort((a, b) => {
+        const scoreDiff = matchScore(b) - matchScore(a);
+        if (scoreDiff !== 0) return scoreDiff;
+        return getUpdatedAt(b) - getUpdatedAt(a);
+      })
+      .slice(1)
+      .forEach((doc) => idsToDelete.add(doc.$id));
+  }
+
+  for (const docId of idsToDelete) {
+    try {
+      await rateLimitedDelete(docId);
+    } catch (err) {
+      result.erros.push(`Erro ao deletar partida inválida/duplicada ${docId}: ${err.message}`);
+    }
+  }
+
+  if (idsToDelete.size > 0) {
+    existing = existing.filter((doc) => !idsToDelete.has(doc.$id));
+  }
+
   for (const jogo of jogos) {
     if (!jogo.time1 || !jogo.time2) {
       console.log(`[appwrite] pulando partida sem times: ${jogo.fase || '?'}`);
@@ -169,6 +252,10 @@ async function syncToAppwrite(jogos) {
     const placar2 = jogo.placar2;
     const status = jogo.status;
     const dataUtc = parseGeDate(jogo.data);
+    if (!dataUtc) {
+      console.log(`[appwrite] pulando partida sem data definida: ${nomeTime1} vs ${nomeTime2} (${jogo.fase || "grupos"})`);
+      continue;
+    }
     const grupoRaw = jogo.grupo || "";
     const grupo = grupoRaw.startsWith("Grupo ") ? grupoRaw.replace("Grupo ", "") : findGroup(nomeTime1, nomeTime2);
 
@@ -178,9 +265,7 @@ async function syncToAppwrite(jogos) {
 
     const match = existing.find((p) => {
       if (p.fase !== fase) return false;
-      const match1 = p.time1 === nomeTime1 && p.time2 === nomeTime2;
-      const match2 = p.time1 === nomeTime2 && p.time2 === nomeTime1;
-      return match1 || match2;
+      return buildMatchKey(p.fase, p.time1, p.time2) === buildMatchKey(fase, nomeTime1, nomeTime2);
     });
 
     if (match) {
