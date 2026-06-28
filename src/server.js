@@ -60,6 +60,18 @@ const GROUP_TEAMS = {
   L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
 };
 
+const PHASES = [
+  "Fase de grupos",
+  "Segunda fase",
+  "Oitavas de final",
+  "Quartas de final",
+  "Semifinal",
+  "Disputa do 3º lugar",
+  "Final",
+];
+
+const KNOCKOUT_PHASES = PHASES.slice(1); // all except group stage
+
 function findGroup(team1, team2) {
   for (const [group, teams] of Object.entries(GROUP_TEAMS)) {
     if (teams.includes(team1) && teams.includes(team2)) return group;
@@ -143,16 +155,28 @@ async function syncToAppwrite(jogos) {
     const grupoRaw = jogo.grupo || "";
     const grupo = grupoRaw.startsWith("Grupo ") ? grupoRaw.replace("Grupo ", "") : findGroup(nomeTime1, nomeTime2);
 
+    const fase = jogo.fase || "grupos";
+    const penaltis1 = jogo.penaltis1 ?? null;
+    const penaltis2 = jogo.penaltis2 ?? null;
+
     const match = existing.find((p) => {
+      if (p.fase !== fase) return false;
       const match1 = p.time1 === nomeTime1 && p.time2 === nomeTime2;
       const match2 = p.time1 === nomeTime2 && p.time2 === nomeTime1;
       return match1 || match2;
     });
 
     if (match) {
-      if (match.placar1 === placar1 && match.placar2 === placar2 && match.status === status && match.data === dataUtc) continue;
+      if (
+        match.placar1 === placar1 &&
+        match.placar2 === placar2 &&
+        match.status === status &&
+        match.data === dataUtc &&
+        (match.penaltis1 ?? null) === penaltis1 &&
+        (match.penaltis2 ?? null) === penaltis2
+      ) continue;
       try {
-        await rateLimitedUpdate(match.$id, { placar1, placar2, status, data: dataUtc });
+        await rateLimitedUpdate(match.$id, { placar1, placar2, status, data: dataUtc, penaltis1, penaltis2 });
         result.atualizadas++;
         console.log(`[appwrite] atualizada: ${nomeTime1} vs ${nomeTime2} → ${placar1}x${placar2} (${status})`);
       } catch (err) {
@@ -164,14 +188,16 @@ async function syncToAppwrite(jogos) {
           time1: nomeTime1,
           time2: nomeTime2,
           grupo,
-          fase: "grupos",
+          fase,
           data: dataUtc,
           placar1,
           placar2,
+          penaltis1,
+          penaltis2,
           status,
         });
         result.criadas++;
-        console.log(`[appwrite] criada: ${nomeTime1} vs ${nomeTime2}`);
+        console.log(`[appwrite] criada: ${nomeTime1} vs ${nomeTime2} (${fase})`);
       } catch (err) {
         result.erros.push(`Erro ao criar ${nomeTime1} vs ${nomeTime2}: ${err.message}`);
       }
@@ -445,6 +471,106 @@ async function scrape() {
       }, grupoNames);
     }
 
+    // ── Phase navigation helpers ──
+    async function navigateToFirstPhase() {
+      let clicked = true;
+      let maxAttempts = 10;
+      while (clicked && maxAttempts > 0) {
+        clicked = await page.evaluate(() => {
+          const arrows = document.querySelectorAll(
+            "nav.navegacao-fase .navegacao-fase__seta-esquerda"
+          );
+          let didClick = false;
+          arrows.forEach((arrow) => {
+            if (arrow && arrow.classList.contains("navegacao-fase__setas-ativa")) {
+              arrow.click();
+              didClick = true;
+            }
+          });
+          return didClick;
+        });
+        if (clicked) {
+          await page.waitForTimeout(1000);
+          maxAttempts--;
+        }
+      }
+    }
+
+    async function clickNextPhase() {
+      return await page.evaluate(() => {
+        const arrows = document.querySelectorAll(
+          "nav.navegacao-fase .navegacao-fase__seta-direita"
+        );
+        let didClick = false;
+        arrows.forEach((arrow) => {
+          if (arrow && arrow.classList.contains("navegacao-fase__setas-ativa")) {
+            arrow.click();
+            didClick = true;
+          }
+        });
+        return didClick;
+      });
+    }
+
+    // ── Knockout match extraction ──
+    async function extractKnockoutJogos(fase) {
+      return await page.evaluate((fase) => {
+        const sections = document.querySelectorAll(".classificacao__mata-mata section.tabela__mata-mata");
+        const jogos = [];
+
+        sections.forEach((section) => {
+          const confrontos = section.querySelectorAll("div.jogo.confronto");
+          confrontos.forEach((jogo) => {
+            const mandanteNome = jogo.querySelector(".confronto__mandante .equipes__nome")?.textContent?.trim();
+            const visitanteNome = jogo.querySelector(".confronto__visitante .equipes__nome")?.textContent?.trim();
+            const mandanteSigla = jogo.querySelector(".confronto__mandante .equipes__sigla")?.textContent?.trim();
+            const visitanteSigla = jogo.querySelector(".confronto__visitante .equipes__sigla")?.textContent?.trim();
+
+            const golsM = jogo.querySelector(".placar-box__valor--mandante")?.textContent?.trim();
+            const golsV = jogo.querySelector(".placar-box__valor--visitante")?.textContent?.trim();
+
+            const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
+
+            const link = jogo.closest("a[href]");
+            const local = link?.querySelector(".jogo__informacoes--local")?.textContent?.trim();
+
+            const broadcast = link?.querySelector(".jogo__transmissao--broadcast")?.textContent?.trim()?.toLowerCase();
+            let status = "agendado";
+            if (broadcast?.includes("tempo real")) {
+              status = "ao-vivo";
+            } else if (broadcast?.includes("saiba como foi")) {
+              if (startDate) {
+                const elapsed = (Date.now() - new Date(startDate).getTime()) / 60000;
+                status = elapsed > 105 ? "finalizado" : "ao-vivo";
+              } else {
+                status = "finalizado";
+              }
+            }
+
+            const key = `${fase}-${mandanteSigla}-${visitanteSigla}`;
+
+            jogos.push({
+              id: key,
+              time1: mandanteNome,
+              time2: visitanteNome,
+              sigla1: mandanteSigla,
+              sigla2: visitanteSigla,
+              placar1: golsM ? parseInt(golsM) : null,
+              placar2: golsV ? parseInt(golsV) : null,
+              status,
+              fase,
+              grupo: "",
+              data: startDate || null,
+              rodada: fase,
+              local: local || null,
+            });
+          });
+        });
+
+        return jogos;
+      }, fase);
+    }
+
     // Helper: click all "previous" arrows to go back to round 1
     async function navigateToFirstRound() {
       let clicked = true;
@@ -516,6 +642,25 @@ async function scrape() {
         roundCount++;
         console.log(`[scrape] rodada ${roundCount}: ${roundJogos.length} partidas (${newCount} novas)`);
       }
+    }
+
+    // Step 4: Navigate knockout phases
+    console.log("[scrape] navegando para a primeira fase...");
+    await navigateToFirstPhase();
+    await page.waitForTimeout(1000);
+
+    for (let phaseIdx = 1; phaseIdx < PHASES.length; phaseIdx++) {
+      const hasNext = await clickNextPhase();
+      if (!hasNext) {
+        console.log(`[scrape] ${PHASES[phaseIdx]}: navegação não disponível, parando`);
+        break;
+      }
+      await page.waitForTimeout(1500);
+      const knockoutJogos = await extractKnockoutJogos(PHASES[phaseIdx]);
+      for (const j of knockoutJogos) {
+        allJogosMap.set(j.id, j);
+      }
+      console.log(`[scrape] ${PHASES[phaseIdx]}: ${knockoutJogos.length} partidas`);
     }
 
     const jogosRaw = Array.from(allJogosMap.values());
