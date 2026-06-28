@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import { chromium } from "playwright";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
@@ -146,6 +147,10 @@ async function syncToAppwrite(jogos) {
   };
 
   for (const jogo of jogos) {
+    if (!jogo.time1 || !jogo.time2) {
+      console.log(`[appwrite] pulando partida sem times: ${jogo.fase || '?'}`);
+      continue;
+    }
     const nomeTime1 = mapNome(jogo.time1);
     const nomeTime2 = mapNome(jogo.time2);
     const placar1 = jogo.placar1;
@@ -472,15 +477,39 @@ async function scrape() {
             const mandanteSigla = placar.querySelector(".placar__equipes--mandante .equipes__sigla")?.textContent?.trim();
             const visitanteSigla = placar.querySelector(".placar__equipes--visitante .equipes__sigla")?.textContent?.trim();
 
-            const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?.trim();
+            if (!mandanteNome || !visitanteNome || !mandanteSigla || !visitanteSigla) return;
+
+const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?.trim();
             const golsV = placar.querySelector(".placar-box__valor--visitante")?.textContent?.trim();
 
-            const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
+const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
+            
+            const link = jogo.querySelector("a.jogo__transmissao--link, a.placar-jogo-link");
+            // For matches with only date in meta tag (knockout), extract time from visible elements:
+            //   .jogo__informacoes--data (e.g., "29/06")
+            //   .jogo__informacoes--hora (e.g., "17:30")
+            let matchDate = startDate;
+            if (link && (!startDate || !startDate.includes("T"))) {
+              const dataEl = link.querySelector(".jogo__informacoes--data");
+              const horaEl = link.querySelector(".jogo__informacoes--hora");
+              if (dataEl && horaEl) {
+                const allData = Array.from(link.querySelectorAll(".jogo__informacoes--data")).map(el => el.textContent?.trim()).filter(Boolean);
+                const dataText = allData.find(d => d.includes("/")) || allData[0];
+                const horaText = horaEl.textContent?.trim();
+                if (dataText && horaText) {
+                  const parts = dataText.split("/");
+                  if (parts.length === 2) {
+                    const [day, month] = parts;
+                    const year = new Date().getFullYear();
+                    matchDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${horaText}:00.000-03:00`;
+                  }
+                }
+              }
+            }
 
-            const link = jogo.querySelector("a.jogo__transmissao--link");
-            const local = link?.querySelector(".jogo__informacoes--local")?.textContent?.trim();
+            const local = link?.querySelector(".jogo__informacoes--local, .placar-jogo-informacoes-local")?.textContent?.trim();
 
-            const broadcast = link?.querySelector(".jogo__transmissao--broadcast")?.textContent?.trim()?.toLowerCase();
+            const broadcast = link?.querySelector(".jogo__transmissao--broadcast, .placar-jogo-tag-transmissao .tabela-tag-transmissao")?.textContent?.trim()?.toLowerCase();
             let status = "agendado";
             if (broadcast?.includes("tempo real")) {
               status = "ao-vivo";
@@ -506,7 +535,7 @@ async function scrape() {
               status,
               fase,
               grupo: "",
-              data: startDate || null,
+              data: matchDate || null,
               rodada: fase,
               local: local || null,
             });
