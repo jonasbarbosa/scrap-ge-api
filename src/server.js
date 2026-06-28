@@ -529,7 +529,7 @@ async function scrape() {
               status,
               fase: "grupos",
               grupo,
-              data: parseGeDate(startDate),
+              data: startDate || null,
               rodada: rodada || null,
               local: local || null,
               dataLabel: dataLabel || null,
@@ -663,7 +663,7 @@ const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute
               status,
               fase,
               grupo: "",
-              data: parseGeDate(matchDate),
+              data: matchDate || null,
               rodada: fase,
               local: local || null,
             });
