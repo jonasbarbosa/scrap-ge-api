@@ -292,60 +292,6 @@ async function scrape() {
     });
     await page.waitForTimeout(5000);
 
-    const grupos = await page.evaluate(() => {
-      const articles = document.querySelectorAll("article.tabela__futebol");
-      return Array.from(articles).map((article) => {
-        const grupo =
-          article
-            .querySelector(".classificacao__header--titulo")
-            ?.textContent?.trim() || "";
-
-        const tableTeams = article.querySelector("table.tabela__equipes");
-        const statsTable = article.querySelector("table.tabela__pontos");
-
-        const teamRows = tableTeams
-          ? tableTeams.querySelectorAll("tr.classificacao__tabela--linha")
-          : [];
-        const statRows = statsTable ? statsTable.querySelectorAll("tr") : [];
-
-        const times = Array.from(teamRows)
-          .map((row, idx) => {
-            const pos = row
-              .querySelector(".classificacao__equipes--posicao")
-              ?.textContent?.trim();
-            const nome = row
-              .querySelector(".classificacao__equipes--nome")
-              ?.textContent?.trim();
-            const sigla = row
-              .querySelector(".classificacao__equipes--sigla")
-              ?.textContent?.trim();
-
-            const statRow = statRows[idx + 1];
-            let stats = null;
-            let pts = 0;
-            if (statRow) {
-              const cells = statRow.querySelectorAll("td");
-              stats = {
-                jogos: cells[1]?.textContent?.trim(),
-                vitorias: cells[2]?.textContent?.trim(),
-                empates: cells[3]?.textContent?.trim(),
-                derrotas: cells[4]?.textContent?.trim(),
-                golsPro: cells[5]?.textContent?.trim(),
-                golsContra: cells[6]?.textContent?.trim(),
-                saldoGols: cells[7]?.textContent?.trim(),
-                aproveitamento: cells[8]?.textContent?.trim(),
-              };
-              pts = parseInt(cells[0]?.textContent?.trim() || "0");
-            }
-
-            return { pos: pos ? parseInt(pos) : null, nome, sigla, pts, stats };
-          })
-          .filter((t) => t.nome);
-
-        return { grupo, times };
-      });
-    });
-
     const artilharia = await page.evaluate(() => {
       const items = document.querySelectorAll(".ranking-item-wrapper");
       return Array.from(items)
@@ -375,9 +321,6 @@ async function scrape() {
           };
         });
     });
-
-    // Extract group names in order for section→group mapping
-    const grupoNames = grupos.map((g) => g.grupo);
 
     // ── Navigate all rounds per group to capture historical matches ──
     const allJogosMap = new Map(); // key → jogo object
@@ -519,19 +462,22 @@ async function scrape() {
         const jogos = [];
 
         sections.forEach((section) => {
-          const confrontos = section.querySelectorAll("div.jogo.confronto");
-          confrontos.forEach((jogo) => {
-            const mandanteNome = jogo.querySelector(".confronto__mandante .equipes__nome")?.textContent?.trim();
-            const visitanteNome = jogo.querySelector(".confronto__visitante .equipes__nome")?.textContent?.trim();
-            const mandanteSigla = jogo.querySelector(".confronto__mandante .equipes__sigla")?.textContent?.trim();
-            const visitanteSigla = jogo.querySelector(".confronto__visitante .equipes__sigla")?.textContent?.trim();
+          const matches = section.querySelectorAll("div.jogo");
+          matches.forEach((jogo) => {
+            const placar = jogo.querySelector(".placar");
+            if (!placar) return;
 
-            const golsM = jogo.querySelector(".placar-box__valor--mandante")?.textContent?.trim();
-            const golsV = jogo.querySelector(".placar-box__valor--visitante")?.textContent?.trim();
+            const mandanteNome = placar.querySelector(".placar__equipes--mandante .equipes__nome")?.textContent?.trim();
+            const visitanteNome = placar.querySelector(".placar__equipes--visitante .equipes__nome")?.textContent?.trim();
+            const mandanteSigla = placar.querySelector(".placar__equipes--mandante .equipes__sigla")?.textContent?.trim();
+            const visitanteSigla = placar.querySelector(".placar__equipes--visitante .equipes__sigla")?.textContent?.trim();
+
+            const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?.trim();
+            const golsV = placar.querySelector(".placar-box__valor--visitante")?.textContent?.trim();
 
             const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
 
-            const link = jogo.closest("a[href]");
+            const link = jogo.querySelector("a.jogo__transmissao--link");
             const local = link?.querySelector(".jogo__informacoes--local")?.textContent?.trim();
 
             const broadcast = link?.querySelector(".jogo__transmissao--broadcast")?.textContent?.trim()?.toLowerCase();
@@ -613,18 +559,81 @@ async function scrape() {
       });
     }
 
-    // Step 1: Go back to round 1 for all groups
+    // Step 1: Navigate to Fase de grupos first (page defaults to Segunda fase)
+    console.log("[scrape] navegando para fase de grupos...");
+    await navigateToFirstPhase();
+    await page.waitForTimeout(2000);
+
+    // Extract grupos (classification tables, only visible in Fase de grupos view)
+    const grupos = await page.evaluate(() => {
+      const articles = document.querySelectorAll("article.tabela__futebol");
+      return Array.from(articles).map((article) => {
+        const grupo =
+          article
+            .querySelector(".classificacao__header--titulo")
+            ?.textContent?.trim() || "";
+
+        const tableTeams = article.querySelector("table.tabela__equipes");
+        const statsTable = article.querySelector("table.tabela__pontos");
+
+        const teamRows = tableTeams
+          ? tableTeams.querySelectorAll("tr.classificacao__tabela--linha")
+          : [];
+        const statRows = statsTable ? statsTable.querySelectorAll("tr") : [];
+
+        const times = Array.from(teamRows)
+          .map((row, idx) => {
+            const pos = row
+              .querySelector(".classificacao__equipes--posicao")
+              ?.textContent?.trim();
+            const nome = row
+              .querySelector(".classificacao__equipes--nome")
+              ?.textContent?.trim();
+            const sigla = row
+              .querySelector(".classificacao__equipes--sigla")
+              ?.textContent?.trim();
+
+            const statRow = statRows[idx + 1];
+            let stats = null;
+            let pts = 0;
+            if (statRow) {
+              const cells = statRow.querySelectorAll("td");
+              stats = {
+                jogos: cells[1]?.textContent?.trim(),
+                vitorias: cells[2]?.textContent?.trim(),
+                empates: cells[3]?.textContent?.trim(),
+                derrotas: cells[4]?.textContent?.trim(),
+                golsPro: cells[5]?.textContent?.trim(),
+                golsContra: cells[6]?.textContent?.trim(),
+                saldoGols: cells[7]?.textContent?.trim(),
+                aproveitamento: cells[8]?.textContent?.trim(),
+              };
+              pts = parseInt(cells[0]?.textContent?.trim() || "0");
+            }
+
+            return { pos: pos ? parseInt(pos) : null, nome, sigla, pts, stats };
+          })
+          .filter((t) => t.nome);
+
+        return { grupo, times };
+      });
+    });
+
+    // Extract group names in order for section→group mapping
+    const grupoNames = grupos.map((g) => g.grupo);
+
+    // Step 2: Go back to round 1 within group stage
     console.log("[scrape] navegando para rodada 1...");
     await navigateToFirstRound();
 
-    // Step 2: Collect matches from round 1
+    // Step 3: Collect matches from round 1
     const round1Jogos = await extractCurrentJogos(grupoNames);
     for (const j of round1Jogos) {
       allJogosMap.set(j.id, j);
     }
     console.log(`[scrape] rodada 1: ${round1Jogos.length} partidas`);
 
-    // Step 3: Navigate forward and collect each round
+    // Step 4: Navigate forward and collect each round
     let hasMore = true;
     let roundCount = 1;
     while (hasMore && roundCount < 10) { // max 10 rounds
@@ -644,9 +653,8 @@ async function scrape() {
       }
     }
 
-    // Step 4: Navigate knockout phases
-    console.log("[scrape] navegando para a primeira fase...");
-    await navigateToFirstPhase();
+    // Step 5: Navigate knockout phases (click right from Fase de grupos)
+    console.log("[scrape] navegando para fases eliminatórias...");
     await page.waitForTimeout(1000);
 
     for (let phaseIdx = 1; phaseIdx < PHASES.length; phaseIdx++) {
