@@ -82,26 +82,47 @@ function findGroup(team1, team2) {
 
 function parseGeDate(raw) {
   if (!raw) return null;
+  const value = String(raw).trim();
 
-  // Handle date-only format (e.g., "2026-06-28") — no time available
-  if (!raw.includes('T')) {
-    const [year, month, day] = raw.split('-').map(Number);
-    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-      // Assume midnight BRT (UTC-3 = 03:00 UTC) as fallback
-      const utc = new Date(Date.UTC(year, month - 1, day, 3, 0));
-      return utc.toISOString();
-    }
-    return null;
+  // If the source already provides an explicit timezone, trust it.
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value)) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
-  const parts = raw.split("T");
-  if (parts.length !== 2) return null;
-  const [datePart, timePart] = parts;
-  const [year, month, day] = datePart.split("-").map(Number);
-  const [hour, minute] = timePart.split(":").map(Number);
-  if ([year, month, day, hour, minute].some((part) => Number.isNaN(part))) return null;
-  const utc = new Date(Date.UTC(year, month - 1, day, hour + 3, minute));
-  return utc.toISOString();
+  // Date-only values are interpreted as midnight in Brazil time.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T00:00:00-03:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  // Naive date-time values from the scrape are already in Brazil time.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?$/.test(value)) {
+    const parsed = new Date(`${value}-03:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function formatBrazilDateTime(raw, fallbackLabel, fallbackHour) {
+  const normalized = parseGeDate(raw);
+  if (normalized) {
+    const date = new Date(normalized);
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      timeZone: "America/Bahia",
+    }) + " " + date.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "America/Bahia",
+    });
+  }
+  if (fallbackHour) return `${fallbackLabel || ""} ${fallbackHour}`.trim();
+  return "—";
 }
 
 function buildMatchKey(fase, time1, time2) {
@@ -508,7 +529,7 @@ async function scrape() {
               status,
               fase: "grupos",
               grupo,
-              data: startDate || null,
+              data: parseGeDate(startDate),
               rodada: rodada || null,
               local: local || null,
               dataLabel: dataLabel || null,
@@ -642,7 +663,7 @@ const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute
               status,
               fase,
               grupo: "",
-              data: matchDate || null,
+              data: parseGeDate(matchDate),
               rodada: fase,
               local: local || null,
             });
@@ -911,13 +932,7 @@ async function init(){
       jogos.forEach(j=>{
         const hasScore=j.placar1!==null;
         const placar=hasScore?j.placar1+' x '+j.placar2:'—';
-        let dtStr='—';
-        if(j.data){
-          const d2=new Date(j.data);
-          dtStr=d2.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d2.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-        }else if(j.hora){
-          dtStr=(j.dataLabel||'')+' '+j.hora;
-        }
+        const dtStr=formatBrazilDateTime(j.data, j.dataLabel, j.hora);
         const local=j.local||'—';
         const sc=j.status||'agendado';
         const badgeClass=sc==='ao-vivo'?'ao-vivo':sc==='finalizado'?'finalizado':'agendado';
