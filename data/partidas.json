@@ -693,7 +693,7 @@
     "data": "2026-06-22T14:00",
     "rodada": "2ª RODADA",
     "local": "Dallas",
-    "dataLabel": "Hoje",
+    "dataLabel": "22/06",
     "hora": "14:00"
   },
   {
@@ -710,7 +710,7 @@
     "data": "2026-06-22T18:00",
     "rodada": "2ª RODADA",
     "local": "Filadélfia",
-    "dataLabel": "Hoje",
+    "dataLabel": "22/06",
     "hora": "18:00"
   },
   {
@@ -727,7 +727,7 @@
     "data": "2026-06-22T21:00",
     "rodada": "2ª RODADA",
     "local": "Nova Jersey",
-    "dataLabel": "Hoje",
+    "dataLabel": "22/06",
     "hora": "21:00"
   },
   {
@@ -829,8 +829,8 @@
     "data": "2026-06-24T16:00",
     "rodada": "3ª RODADA",
     "local": "Vancouver Place",
-    "dataLabel": null,
-    "hora": null
+    "dataLabel": "24/06",
+    "hora": "16:00"
   },
   {
     "id": "BOS-CAT",
@@ -846,8 +846,8 @@
     "data": "2026-06-24T16:00",
     "rodada": "3ª RODADA",
     "local": "Seattle Field",
-    "dataLabel": null,
-    "hora": null
+    "dataLabel": "24/06",
+    "hora": "16:00"
   },
   {
     "id": "MAR-HAI",
@@ -931,8 +931,8 @@
     "data": "2026-06-25T17:00",
     "rodada": "3ª RODADA",
     "local": "Nova Jersey",
-    "dataLabel": null,
-    "hora": null
+    "dataLabel": "25/06",
+    "hora": "17:00"
   },
   {
     "id": "CUR-CDM",
@@ -948,8 +948,8 @@
     "data": "2026-06-25T17:00",
     "rodada": "3ª RODADA",
     "local": "Filadélfia",
-    "dataLabel": null,
-    "hora": null
+    "dataLabel": "25/06",
+    "hora": "17:00"
   },
   {
     "id": "TUN-HOL",
@@ -965,7 +965,7 @@
     "data": "2026-06-25T20:00",
     "rodada": "3ª RODADA",
     "local": "Kansas City",
-    "dataLabel": "Hoje",
+    "dataLabel": "25/06",
     "hora": "20:00"
   },
   {
@@ -982,7 +982,7 @@
     "data": "2026-06-25T20:00",
     "rodada": "3ª RODADA",
     "local": "Dallas",
-    "dataLabel": "Hoje",
+    "dataLabel": "25/06",
     "hora": "20:00"
   },
   {
@@ -1190,21 +1190,6 @@
     "hora": "20:30"
   },
   {
-    "id": "Segunda fase-AFS-CAN",
-    "time1": "África do Sul",
-    "time2": "Canadá",
-    "sigla1": "AFS",
-    "sigla2": "CAN",
-    "placar1": 0,
-    "placar2": 1,
-    "status": "finalizado",
-    "fase": "Segunda fase",
-    "grupo": "",
-    "data": "2026-06-28",
-    "rodada": "Segunda fase",
-    "local": "Los Angeles"
-  },
-  {
     "id": "JOR-ARG",
     "time1": "Jordânia",
     "time2": "Argentina",
@@ -1239,6 +1224,23 @@
     "hora": "23:00"
   },
   {
+    "id": "Segunda fase-AFS-CAN",
+    "time1": "África do Sul",
+    "time2": "Canadá",
+    "sigla1": "AFS",
+    "sigla2": "CAN",
+    "placar1": 0,
+    "placar2": 1,
+    "status": "finalizado",
+    "fase": "Segunda fase",
+    "grupo": "",
+    "data": "2026-06-28T16:00:00-03:00",
+    "rodada": "Segunda fase",
+    "local": "Los Angeles",
+    "dataLabel": "Hoje",
+    "hora": "16:00"
+  },
+  {
     "id": "Segunda fase-BRA-JAP",
     "time1": "Brasil",
     "time2": "Japão",
@@ -1249,9 +1251,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-06-29T14:00:00.000-03:00",
+    "data": "2026-06-29T14:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Houston"
+    "local": "Houston",
+    "dataLabel": "29/06",
+    "hora": "14:00"
   },
   {
     "id": "Segunda fase-ALE-PAR",
@@ -1264,9 +1268,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-06-29T17:30:00.000-03:00",
+    "data": "2026-06-29T17:30:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Boston"
+    "local": "Boston",
+    "dataLabel": "29/06",
+    "hora": "17:30"
   },
   {
     "id": "Segunda fase-HOL-MAR",
@@ -1279,9 +1285,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-06-29T22:00:00.000-03:00",
+    "data": "2026-06-29T22:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "El Gigante de Acero"
+    "local": "El Gigante de Acero",
+    "dataLabel": "29/06",
+    "hora": "22:00"
   },
   {
     "id": "Segunda fase-CDM-NOR",
@@ -1294,9 +1302,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-06-30T14:00:00.000-03:00",
+    "data": "2026-06-30T14:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Dallas"
+    "local": "Dallas",
+    "dataLabel": "30/06",
+    "hora": "14:00"
   },
   {
     "id": "Segunda fase-FRA-SUE",
@@ -1309,9 +1319,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-06-30T18:00:00.000-03:00",
+    "data": "2026-06-30T18:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Nova Jersey"
+    "local": "Nova Jersey",
+    "dataLabel": "30/06",
+    "hora": "18:00"
   },
   {
     "id": "Segunda fase-MEX-EQU",
@@ -1324,9 +1336,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-06-30T22:00:00.000-03:00",
+    "data": "2026-06-30T22:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Azteca"
+    "local": "Azteca",
+    "dataLabel": "30/06",
+    "hora": "22:00"
   },
   {
     "id": "Segunda fase-ING-RDC",
@@ -1339,9 +1353,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-01T13:00:00.000-03:00",
+    "data": "2026-07-01T13:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Atlanta"
+    "local": "Atlanta",
+    "dataLabel": "01/07",
+    "hora": "13:00"
   },
   {
     "id": "Segunda fase-BEL-SEN",
@@ -1354,9 +1370,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-01T17:00:00.000-03:00",
+    "data": "2026-07-01T17:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Seattle Field"
+    "local": "Seattle Field",
+    "dataLabel": "01/07",
+    "hora": "17:00"
   },
   {
     "id": "Segunda fase-EUA-BOS",
@@ -1369,9 +1387,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-01T21:00:00.000-03:00",
+    "data": "2026-07-01T21:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Santa Clara"
+    "local": "Santa Clara",
+    "dataLabel": "01/07",
+    "hora": "21:00"
   },
   {
     "id": "Segunda fase-ESP-AUT",
@@ -1384,9 +1404,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-02T16:00:00.000-03:00",
+    "data": "2026-07-02T16:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Los Angeles"
+    "local": "Los Angeles",
+    "dataLabel": "02/07",
+    "hora": "16:00"
   },
   {
     "id": "Segunda fase-POR-CRO",
@@ -1399,9 +1421,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-02T20:00:00.000-03:00",
+    "data": "2026-07-02T20:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Toronto Field"
+    "local": "Toronto Field",
+    "dataLabel": "02/07",
+    "hora": "20:00"
   },
   {
     "id": "Segunda fase-SUI-AGL",
@@ -1414,9 +1438,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-03T00:00:00.000-03:00",
+    "data": "2026-07-03T00:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Vancouver Place"
+    "local": "Vancouver Place",
+    "dataLabel": "03/07",
+    "hora": "00:00"
   },
   {
     "id": "Segunda fase-AUS-EGI",
@@ -1429,9 +1455,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-03T15:00:00.000-03:00",
+    "data": "2026-07-03T15:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Dallas"
+    "local": "Dallas",
+    "dataLabel": "03/07",
+    "hora": "15:00"
   },
   {
     "id": "Segunda fase-ARG-CAB",
@@ -1444,9 +1472,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-03T19:00:00.000-03:00",
+    "data": "2026-07-03T19:00:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Miami"
+    "local": "Miami",
+    "dataLabel": "03/07",
+    "hora": "19:00"
   },
   {
     "id": "Segunda fase-COL-GAN",
@@ -1459,64 +1489,11 @@
     "status": "agendado",
     "fase": "Segunda fase",
     "grupo": "",
-    "data": "2026-07-03T22:30:00.000-03:00",
+    "data": "2026-07-03T22:30:00-03:00",
     "rodada": "Segunda fase",
-    "local": "Kansas City"
-  },
-  {
-    "id": "Oitavas de final-undefined-undefined",
-    "placar1": null,
-    "placar2": null,
-    "status": "agendado",
-    "fase": "Oitavas de final",
-    "grupo": "",
-    "data": null,
-    "rodada": "Oitavas de final",
-    "local": null
-  },
-  {
-    "id": "Quartas de final-undefined-undefined",
-    "placar1": null,
-    "placar2": null,
-    "status": "agendado",
-    "fase": "Quartas de final",
-    "grupo": "",
-    "data": null,
-    "rodada": "Quartas de final",
-    "local": null
-  },
-  {
-    "id": "Semifinal-undefined-undefined",
-    "placar1": null,
-    "placar2": null,
-    "status": "agendado",
-    "fase": "Semifinal",
-    "grupo": "",
-    "data": null,
-    "rodada": "Semifinal",
-    "local": null
-  },
-  {
-    "id": "Disputa do 3º lugar-undefined-undefined",
-    "placar1": null,
-    "placar2": null,
-    "status": "agendado",
-    "fase": "Disputa do 3º lugar",
-    "grupo": "",
-    "data": null,
-    "rodada": "Disputa do 3º lugar",
-    "local": null
-  },
-  {
-    "id": "Final-undefined-undefined",
-    "placar1": null,
-    "placar2": null,
-    "status": "agendado",
-    "fase": "Final",
-    "grupo": "",
-    "data": null,
-    "rodada": "Final",
-    "local": null
+    "local": "Kansas City",
+    "dataLabel": "03/07",
+    "hora": "22:30"
   },
   {
     "id": "Oitavas de final--",

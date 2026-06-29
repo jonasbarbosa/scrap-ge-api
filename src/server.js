@@ -106,7 +106,57 @@ function parseGeDate(raw) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+function isDateOnlyValue(raw) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(raw || "").trim());
+}
+
+function hasExplicitMatchTime(raw) {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(raw || "").trim());
+}
+
+function formatDateOnlyPtBr(raw) {
+  if (!isDateOnlyValue(raw)) return null;
+  const [, month, day] = String(raw).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/) || [];
+  return month && day ? `${day}/${month}` : null;
+}
+
+function combineIsoDateAndTime(dateValue, timeValue) {
+  const dateMatch = String(dateValue || "").trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  const timeMatch = String(timeValue || "").trim().match(/^(\d{2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) return null;
+  return `${dateMatch[1]}T${timeMatch[1]}:${timeMatch[2]}:00-03:00`;
+}
+
+function buildIsoDateFromCardLabel(label, year = new Date().getFullYear()) {
+  const match = String(label || "").trim().match(/^(\d{2})\/(\d{2})$/);
+  if (!match) return null;
+  const [, day, month] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function resolveKnockoutMatchDate(startDate, dataTexts = [], horaTexts = []) {
+  if (hasExplicitMatchTime(startDate)) return startDate;
+
+  const visibleHour = horaTexts.find((value) => /^\d{2}:\d{2}$/.test(String(value || "").trim()));
+  if (isDateOnlyValue(startDate) && visibleHour) {
+    return combineIsoDateAndTime(startDate, visibleHour);
+  }
+
+  const visibleDate = dataTexts.find((value) => /^\d{2}\/\d{2}$/.test(String(value || "").trim()));
+  if (visibleDate && visibleHour) {
+    const isoDate = buildIsoDateFromCardLabel(visibleDate);
+    return combineIsoDateAndTime(isoDate, visibleHour);
+  }
+
+  if (isDateOnlyValue(startDate)) return startDate;
+  if (visibleDate) return buildIsoDateFromCardLabel(visibleDate);
+  return startDate || null;
+}
+
 function formatBrazilDateTime(raw, fallbackLabel, fallbackHour) {
+  const dateOnlyLabel = formatDateOnlyPtBr(raw);
+  if (dateOnlyLabel) return dateOnlyLabel;
+
   const normalized = parseGeDate(raw);
   if (normalized) {
     const date = new Date(normalized);
@@ -369,7 +419,11 @@ function savePartidas(partidas) {
 // ── Match merging ─────────────────────────────────────────────────
 
 function mergePartidas(existing, scraped) {
-  const map = new Map(existing.map((p) => [p.id, p]));
+  const map = new Map(
+    existing
+      .filter((p) => p?.id && p?.time1 && p?.time2)
+      .map((p) => [p.id, p])
+  );
 
   for (const np of scraped) {
     const old = map.get(np.id);
@@ -382,6 +436,8 @@ function mergePartidas(existing, scraped) {
       old.rodada = np.rodada;
       old.data = np.data;
       old.local = np.local;
+      if (Object.prototype.hasOwnProperty.call(np, "dataLabel")) old.dataLabel = np.dataLabel ?? null;
+      if (Object.prototype.hasOwnProperty.call(np, "hora")) old.hora = np.hora ?? null;
     } else {
       map.set(np.id, np);
     }
@@ -409,11 +465,88 @@ async function scrape() {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     });
     const page = await context.newPage();
+    const detailStartDateCache = new Map();
     await page.goto("https://ge.globo.com/futebol/copa-do-mundo/", {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
     await page.waitForTimeout(5000);
+
+    async function fetchCanonicalStartDate(href) {
+      if (!href) return null;
+      if (detailStartDateCache.has(href)) return detailStartDateCache.get(href);
+
+      const detailPage = await context.newPage();
+      let startDate = null;
+
+      try {
+        await detailPage.goto(href, {
+          waitUntil: "domcontentloaded",
+          timeout: 60000,
+        });
+        await detailPage.waitForTimeout(2000);
+
+        startDate = await detailPage.evaluate(() => {
+          const metaStartDate = document
+            .querySelector('meta[itemprop="startDate"]')
+            ?.getAttribute("content");
+          if (metaStartDate) return metaStartDate;
+
+          function findStartDate(value) {
+            if (!value) return null;
+            if (typeof value === "string") return null;
+            if (Array.isArray(value)) {
+              for (const item of value) {
+                const found = findStartDate(item);
+                if (found) return found;
+              }
+              return null;
+            }
+            if (typeof value === "object") {
+              if (typeof value.startDate === "string" && value.startDate.trim()) {
+                return value.startDate.trim();
+              }
+              for (const nested of Object.values(value)) {
+                const found = findStartDate(nested);
+                if (found) return found;
+              }
+            }
+            return null;
+          }
+
+          const jsonLdScripts = Array.from(
+            document.querySelectorAll('script[type="application/ld+json"]')
+          )
+            .map((el) => el.textContent)
+            .filter(Boolean);
+
+          for (const scriptText of jsonLdScripts) {
+            try {
+              const found = findStartDate(JSON.parse(scriptText));
+              if (found) return found;
+            } catch {
+              // Ignore malformed JSON-LD blocks and keep searching.
+            }
+          }
+
+          const regex = /"startDate"\s*:\s*"([^"]+)"/;
+          for (const script of Array.from(document.scripts)) {
+            const text = script.textContent || "";
+            const match = text.match(regex);
+            if (match?.[1]) return match[1];
+          }
+
+          return null;
+        });
+      } catch (err) {
+        console.warn(`[scrape] falha ao buscar detalhe da partida ${href}: ${err.message}`);
+      } finally {
+        await detailPage.close();
+      }
+
+      detailStartDateCache.set(href, startDate);
+      return startDate;
+    }
 
     const artilharia = await page.evaluate(() => {
       const items = document.querySelectorAll(".ranking-item-wrapper");
@@ -605,32 +738,18 @@ async function scrape() {
 const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?.trim();
             const golsV = placar.querySelector(".placar-box__valor--visitante")?.textContent?.trim();
 
-const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
+            const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
             
             const link = jogo.querySelector("a.jogo__transmissao--link, a.placar-jogo-link");
-            // For matches with only date in meta tag (knockout), extract time from visible elements:
-            //   .jogo__informacoes--data (e.g., "29/06")
-            //   .jogo__informacoes--hora (e.g., "17:30")
-            let matchDate = startDate;
-            if (link && (!startDate || !startDate.includes("T"))) {
-              const dataEl = link.querySelector(".jogo__informacoes--data");
-              const horaEl = link.querySelector(".jogo__informacoes--hora");
-              if (dataEl && horaEl) {
-                const allData = Array.from(link.querySelectorAll(".jogo__informacoes--data")).map(el => el.textContent?.trim()).filter(Boolean);
-                const dataText = allData.find(d => d.includes("/")) || allData[0];
-                const horaText = horaEl.textContent?.trim();
-                if (dataText && horaText) {
-                  const parts = dataText.split("/");
-                  if (parts.length === 2) {
-                    const [day, month] = parts;
-                    const year = new Date().getFullYear();
-                    matchDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${horaText}:00.000-03:00`;
-                  }
-                }
-              }
-            }
-
+            const dataTexts = Array.from(link?.querySelectorAll(".jogo__informacoes--data") || [])
+              .map((el) => el.textContent?.trim())
+              .filter(Boolean);
+            const horaTexts = Array.from(link?.querySelectorAll(".jogo__informacoes--hora") || [])
+              .map((el) => el.textContent?.trim())
+              .filter(Boolean);
             const local = link?.querySelector(".jogo__informacoes--local, .placar-jogo-informacoes-local")?.textContent?.trim();
+            const dataLabel = dataTexts[0] || null;
+            const hora = horaTexts[0] || null;
 
             const broadcast = link?.querySelector(".jogo__transmissao--broadcast, .placar-jogo-tag-transmissao .tabela-tag-transmissao")?.textContent?.trim()?.toLowerCase();
             let status = "agendado";
@@ -663,9 +782,14 @@ const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute
               status,
               fase,
               grupo: "",
-              data: matchDate || null,
               rodada: fase,
               local: local || null,
+              dataLabel,
+              hora,
+              href: link?.href || null,
+              startDate: startDate || null,
+              dataTexts,
+              horaTexts,
             });
           });
         });
@@ -821,7 +945,38 @@ const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute
         break;
       }
       await page.waitForTimeout(1500);
-      const knockoutJogos = await extractKnockoutJogos(PHASES[phaseIdx]);
+      const knockoutJogosRaw = await extractKnockoutJogos(PHASES[phaseIdx]);
+      const knockoutJogos = [];
+      for (const jogo of knockoutJogosRaw) {
+        let matchDate = resolveKnockoutMatchDate(jogo.startDate, jogo.dataTexts, jogo.horaTexts);
+
+        if (!hasExplicitMatchTime(matchDate) && jogo.href) {
+          const canonicalStartDate = await fetchCanonicalStartDate(jogo.href);
+          if (hasExplicitMatchTime(canonicalStartDate)) {
+            matchDate = canonicalStartDate;
+          } else if (!matchDate) {
+            matchDate = canonicalStartDate || null;
+          }
+        }
+
+        knockoutJogos.push({
+          id: jogo.id,
+          time1: jogo.time1,
+          time2: jogo.time2,
+          sigla1: jogo.sigla1,
+          sigla2: jogo.sigla2,
+          placar1: jogo.placar1,
+          placar2: jogo.placar2,
+          status: jogo.status,
+          fase: jogo.fase,
+          grupo: jogo.grupo,
+          data: matchDate || null,
+          rodada: jogo.rodada,
+          local: jogo.local,
+          dataLabel: jogo.dataLabel,
+          hora: jogo.hora,
+        });
+      }
       for (const j of knockoutJogos) {
         allJogosMap.set(j.id, j);
       }
@@ -897,10 +1052,36 @@ td:nth-child(2){text-align:left;font-weight:500}
 <p class="sub" id="subtitle">Atualizado em ${dtStr} - Dados do ge.globo</p>
 <div id="app" class="loading">Buscando dados...</div>
 <script>
+function isDateOnlyValue(raw){
+  return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(raw || '').trim());
+}
+
+function formatDateOnlyPtBr(raw){
+  const match=String(raw || '').trim().match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  return match ? match[3] + '/' + match[2] : null;
+}
+
+function parseGeDateTimeClient(raw){
+  if(!raw) return null;
+  const value=String(raw).trim();
+  if(/[zZ]$|[+-]\\d{2}:\\d{2}$/.test(value)){
+    const parsed=new Date(value);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{3})?)?$/.test(value)){
+    const parsed=new Date(value + '-03:00');
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parsed=new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function formatBrazilDateTimeClient(raw, fallbackLabel, fallbackHour){
+  const dateOnlyLabel = formatDateOnlyPtBr(raw);
+  if(dateOnlyLabel) return dateOnlyLabel;
   if(raw){
-    const date = new Date(raw);
-    if(!isNaN(date.getTime())){
+    const date = parseGeDateTimeClient(raw);
+    if(date){
       return date.toLocaleDateString('pt-BR', {
         day: '2-digit',
         month: '2-digit',
