@@ -416,6 +416,148 @@ function savePartidas(partidas) {
   }
 }
 
+function isPlaceholderTeam(name) {
+  return /^Venc\./.test(String(name || "")) || /^Perd\./.test(String(name || ""));
+}
+
+function hasCompleteScore(match) {
+  return match?.placar1 != null && match?.placar2 != null;
+}
+
+function formatBahiaYmd(value) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bahia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}
+
+function buildTournamentStats(partidas, updatedAt = null) {
+  const safePartidas = Array.isArray(partidas) ? partidas : [];
+  const scoredMatches = safePartidas.filter(hasCompleteScore);
+
+  const overview = {
+    jogosTotal: safePartidas.length,
+    jogosFinalizados: safePartidas.filter((p) => p.status === "finalizado").length,
+    jogosAoVivo: safePartidas.filter((p) => p.status === "ao-vivo").length,
+    jogosAgendados: safePartidas.filter((p) => p.status === "agendado").length,
+    golsTotal: scoredMatches.reduce((sum, p) => sum + Number(p.placar1 || 0) + Number(p.placar2 || 0), 0),
+    mediaGolsPorJogo: scoredMatches.length
+      ? Number(
+          (
+            scoredMatches.reduce((sum, p) => sum + Number(p.placar1 || 0) + Number(p.placar2 || 0), 0) /
+            scoredMatches.length
+          ).toFixed(2)
+        )
+      : 0,
+  };
+
+  const phaseMap = new Map();
+  for (const p of safePartidas) {
+    const fase = p.fase || "Fase de grupos";
+    if (!phaseMap.has(fase)) {
+      phaseMap.set(fase, { fase, jogos: 0, gols: 0, jogosComPlacar: 0, mediaGols: 0 });
+    }
+    const entry = phaseMap.get(fase);
+    entry.jogos += 1;
+    if (hasCompleteScore(p)) {
+      entry.gols += Number(p.placar1 || 0) + Number(p.placar2 || 0);
+      entry.jogosComPlacar += 1;
+    }
+  }
+  const phaseOrder = new Map(PHASES.map((fase, index) => [fase, index]));
+  const byPhase = Array.from(phaseMap.values())
+    .map((entry) => ({
+      ...entry,
+      mediaGols: entry.jogosComPlacar ? Number((entry.gols / entry.jogosComPlacar).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => (phaseOrder.get(a.fase) ?? 999) - (phaseOrder.get(b.fase) ?? 999));
+
+  const teamMap = new Map();
+  for (const p of scoredMatches) {
+    if (isPlaceholderTeam(p.time1) || isPlaceholderTeam(p.time2)) continue;
+    const pairs = [
+      { name: p.time1, goalsFor: Number(p.placar1 || 0), goalsAgainst: Number(p.placar2 || 0) },
+      { name: p.time2, goalsFor: Number(p.placar2 || 0), goalsAgainst: Number(p.placar1 || 0) },
+    ];
+    for (const team of pairs) {
+      if (!teamMap.has(team.name)) {
+        teamMap.set(team.name, {
+          selecao: team.name,
+          jogos: 0,
+          vitorias: 0,
+          empates: 0,
+          derrotas: 0,
+          golsPro: 0,
+          golsContra: 0,
+          saldo: 0,
+          pontos: 0,
+          aproveitamento: 0,
+        });
+      }
+      const entry = teamMap.get(team.name);
+      entry.jogos += 1;
+      entry.golsPro += team.goalsFor;
+      entry.golsContra += team.goalsAgainst;
+      if (team.goalsFor > team.goalsAgainst) entry.vitorias += 1;
+      else if (team.goalsFor === team.goalsAgainst) entry.empates += 1;
+      else entry.derrotas += 1;
+    }
+  }
+  const byTeam = Array.from(teamMap.values())
+    .map((team) => {
+      team.saldo = team.golsPro - team.golsContra;
+      team.pontos = team.vitorias * 3 + team.empates;
+      team.aproveitamento = team.jogos ? Number(((team.pontos / (team.jogos * 3)) * 100).toFixed(1)) : 0;
+      return team;
+    })
+    .sort((a, b) =>
+      b.golsPro - a.golsPro ||
+      a.golsContra - b.golsContra ||
+      b.saldo - a.saldo ||
+      b.vitorias - a.vitorias ||
+      a.selecao.localeCompare(b.selecao)
+    );
+
+  const byDayMap = new Map();
+  for (const p of scoredMatches) {
+    if (!p.data) continue;
+    const key = formatBahiaYmd(p.data);
+    if (!byDayMap.has(key)) {
+      byDayMap.set(key, { data: key, jogos: 0, gols: 0 });
+    }
+    const entry = byDayMap.get(key);
+    entry.jogos += 1;
+    entry.gols += Number(p.placar1 || 0) + Number(p.placar2 || 0);
+  }
+  const byDay = Array.from(byDayMap.values())
+    .sort((a, b) => a.data.localeCompare(b.data))
+    .map((entry) => ({
+      ...entry,
+      mediaGols: entry.jogos ? Number((entry.gols / entry.jogos).toFixed(2)) : 0,
+    }));
+
+  const scorelineMap = new Map();
+  for (const p of scoredMatches) {
+    const placar = `${p.placar1}-${p.placar2}`;
+    scorelineMap.set(placar, (scorelineMap.get(placar) || 0) + 1);
+  }
+  const scorelineFrequency = Array.from(scorelineMap.entries())
+    .map(([placar, total]) => ({ placar, total }))
+    .sort((a, b) => b.total - a.total || a.placar.localeCompare(b.placar))
+    .slice(0, 10);
+
+  return {
+    updatedAt,
+    overview,
+    byPhase,
+    byTeam,
+    byDay,
+    scorelineFrequency,
+  };
+}
+
 // ── Match merging ─────────────────────────────────────────────────
 
 function mergePartidas(existing, scraped) {
@@ -1266,6 +1408,11 @@ app.get("/partidas/em-andamento", (req, res) => {
     total: partidas.length,
     partidas,
   });
+});
+
+app.get("/estatisticas", (req, res) => {
+  const partidas = loadPartidas();
+  res.json(buildTournamentStats(partidas, cache.data?.updatedAt || null));
 });
 
 app.get("/grupos", async (req, res) => {
