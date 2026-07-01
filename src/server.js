@@ -1624,34 +1624,22 @@ async function fetchLiveDetails(match) {
       const container = document.getElementById("enrichment-tab-estatisticas");
       if (!container) return null;
 
-      const getStat = (label) => {
-        const all = container.querySelectorAll("*");
-        for (const el of all) {
-          if (el.children.length === 0 && el.textContent.trim() === label) {
-            const row = el.closest("div");
-            if (!row) return { home: null, away: null };
-            const vals = row.querySelectorAll("span");
-            return {
-              home: vals[0]?.textContent?.trim() || null,
-              away: vals[vals.length - 1]?.textContent?.trim() || null,
-            };
-          }
-        }
-        return { home: null, away: null };
+      const rawText = container.innerText || container.textContent || "";
+      const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+
+      const findVal = (label) => {
+        const idx = lines.findIndex((l) => l.includes(label));
+        if (idx === -1) return null;
+        const vals = lines.slice(idx, idx + 3).filter((l) => /^\d+$/.test(l.replace(/\D/g, "") && l.length < 5));
+        return vals.length >= 2 ? `${vals[0]} / ${vals[1]}` : vals[0] || null;
       };
 
-      const posse = getStat("Posse de bola");
-      const finalizacoes = getStat("Finalizações");
-      const escanteios = getStat("Escanteios");
-      const cartaoAmarelo = getStat("Cartão amarelo");
-      const cartaoVermelho = getStat("Cartão vermelho");
-
       return {
-        possession: posse.home ? `${posse.home} / ${posse.away}` : null,
-        shots: finalizacoes.home ? `${finalizacoes.home} / ${finalizacoes.away}` : null,
-        yellowCards: cartaoAmarelo.home ? `${cartaoAmarelo.home} / ${cartaoAmarelo.away}` : null,
-        redCards: cartaoVermelho.home ? `${cartaoVermelho.home} / ${cartaoVermelho.away}` : null,
-        corners: escanteios.home ? `${escanteios.home} / ${escanteios.away}` : null,
+        possession: findVal("Posse de bola") || findVal("Posse"),
+        shots: findVal("Finaliza") || findVal("Finalizações"),
+        yellowCards: findVal("Cartão amarelo") || findVal("Amarelo"),
+        redCards: findVal("Cartão vermelho") || findVal("Vermelho"),
+        corners: findVal("Escanteios") || findVal("Escanteio"),
       };
     });
 
