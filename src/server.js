@@ -1561,7 +1561,6 @@ async function pollScrape() {
 
 // ── Start ─────────────────────────────────────────────────────────
 
-// Fetch live match details (events + stats)
 async function fetchLiveDetails(match) {
   if (!match.href) return null;
   const cached = liveCache.get(match.id);
@@ -1572,37 +1571,92 @@ async function fetchLiveDetails(match) {
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
+
+    await page.route("**/*", (route) => {
+      const url = route.request().url();
+      if (url.includes("doubleclick") || url.includes("googleads") || url.includes("pubmatic") ||
+          url.includes("criteo") || url.includes("rubicon") || url.includes("adsrvr") ||
+          url.includes("adnami") || url.includes("temu") || url.includes("rlcdn") ||
+          url.includes("id5-sync") || url.includes("permutive") || url.includes("thesports01") ||
+          url.includes("sentry") || url.includes("analytics") || url.includes("imasdk") ||
+          url.includes("datadome") || url.includes("smartadserver") || url.includes("prebid")) {
+        return route.abort();
+      }
+      return route.continue();
+    });
+
     await page.goto(match.href, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(10000);
 
     const events = await page.evaluate(() => {
-      const items = document.querySelectorAll(".timeline__item, .evento");
-      return Array.from(items).map((el) => {
-        const minute = el.querySelector(".timeline__minuto, .minuto")?.textContent?.trim();
-        const type = el.querySelector(".timeline__tipo, .tipo")?.textContent?.trim();
-        const description = el.querySelector(".timeline__descricao, .descricao")?.textContent?.trim();
-        return { minute, type, description };
-      }).filter(e => e.minute);
+      const items = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      const eventLabels = ["GOL", "Cartão amarelo", "Cartão vermelho", "GOL CONTRA", "PÊNALTI PERDIDO", "PÊNALTI"];
+      while (walker.nextNode()) {
+        const text = walker.currentNode.textContent.trim();
+        if (eventLabels.includes(text)) {
+          const span = walker.currentNode.parentElement;
+          if (!span) continue;
+          let container = span.closest("div");
+          if (!container) continue;
+          for (let i = 0; i < 5 && container; i++) {
+            const allText = container.textContent || "";
+            const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
+            if (lines.length >= 2) {
+              const minute = lines.find((l) => /^\d+'/.test(l) || /^\d+:\d+/.test(l)) || null;
+              const descLines = lines.filter((l) => l !== text && !/^\d+'/.test(l) && !/^\d+:\d+/.test(l) && l.length > 10);
+              const description = descLines[0] || allText.substring(0, 200).trim();
+              items.push({ type: text, minute, description });
+              break;
+            }
+            container = container.parentElement;
+          }
+        }
+      }
+      return items;
     });
 
     const statistics = await page.evaluate(() => {
-      const g = (sel) => document.querySelector(sel)?.textContent?.trim() || null;
+      const container = document.getElementById("enrichment-tab-estatisticas");
+      if (!container) return null;
+
+      const getStat = (label) => {
+        const all = container.querySelectorAll("*");
+        for (const el of all) {
+          if (el.children.length === 0 && el.textContent.trim() === label) {
+            const row = el.closest("div");
+            if (!row) return { home: null, away: null };
+            const vals = row.querySelectorAll("span");
+            return {
+              home: vals[0]?.textContent?.trim() || null,
+              away: vals[vals.length - 1]?.textContent?.trim() || null,
+            };
+          }
+        }
+        return { home: null, away: null };
+      };
+
+      const posse = getStat("Posse de bola");
+      const finalizacoes = getStat("Finalizações");
+      const escanteios = getStat("Escanteios");
+      const cartaoAmarelo = getStat("Cartão amarelo");
+      const cartaoVermelho = getStat("Cartão vermelho");
+
       return {
-        possession: g(".estatistica__posse .valor"),
-        shots: g(".estatistica__finalizacoes .valor"),
-        yellowCards: g(".estatistica__cartoes-amarelos .valor"),
-        redCards: g(".estatistica__cartoes-vermelhos .valor"),
-        corners: g(".estatistica__escanteios .valor"),
+        possession: posse.home ? `${posse.home} / ${posse.away}` : null,
+        shots: finalizacoes.home ? `${finalizacoes.home} / ${finalizacoes.away}` : null,
+        yellowCards: cartaoAmarelo.home ? `${cartaoAmarelo.home} / ${cartaoAmarelo.away}` : null,
+        redCards: cartaoVermelho.home ? `${cartaoVermelho.home} / ${cartaoVermelho.away}` : null,
+        corners: escanteios.home ? `${escanteios.home} / ${escanteios.away}` : null,
       };
     });
 
-    const result = {
-      matchId: match.id,
-      score: match.placar1 != null && match.placar2 != null ? `${match.placar1} x ${match.placar2}` : null,
-      status: match.status,
-      events,
-      statistics,
-    };
+    const score =
+      match.placar1 != null && match.placar2 != null
+        ? `${match.placar1} x ${match.placar2}`
+        : null;
+
+    const result = { matchId: match.id, score, status: match.status, events, statistics };
     liveCache.set(match.id, { data: result, ts: Date.now() });
     return result;
   } catch (err) {
