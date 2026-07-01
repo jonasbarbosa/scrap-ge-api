@@ -1593,27 +1593,27 @@ async function fetchLiveDetails(match) {
     await page.waitForTimeout(10000);
 
     const events = await page.evaluate(() => {
+      const root = document.querySelector("[class*='lance'], [class*='Lance'], [class*='timeline'], [class*='Timeline'], main, article");
+      const src = root ? (root.innerText || "") : (document.body.innerText || "");
+      const lines = src.split("\n").map((l) => l.trim()).filter(Boolean);
       const items = [];
-      const allText = document.body.innerText || "";
-      const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
       const eventLabels = ["GOL", "GOL CONTRA", "Cartão amarelo", "Cartão vermelho", "PÊNALTI PERDIDO", "PÊNALTI"];
 
       for (let i = 0; i < lines.length; i++) {
         const labelMatch = eventLabels.find((el) => lines[i].includes(el));
         if (!labelMatch) continue;
         const window = lines.slice(Math.max(0, i - 5), Math.min(lines.length, i + 6));
-        const minute = window.find((l) => /^\d+[':]\d*/.test(l) || /\d+[':]\d*$/.test(l) || /^\d+'/.test(l));
+        const minute = window.find((l) => /^\d+'/.test(l) || /\d+[':]\d*$/.test(l));
         const descLines = window.filter((l) => {
           if (l === lines[i] || eventLabels.some((el) => l.includes(el))) return false;
-          if (/^\d+[':]/.test(l) || /^\d+[':]\d*$/.test(l)) return false;
-          return l.length > 3;
+          if (/^\d+[':]/.test(l) || /\d+[':]\d*$/.test(l)) return false;
+          return l.length > 5 && !l.includes("BÉLGICA VS. SENEGAL");
         });
-        const description = descLines.length > 0 ? descLines.slice(0, 2).join(" - ") : null;
-        items.push({
-          type: labelMatch,
-          minute: minute ? minute.replace(/[^0-9'+:]/g, "") : null,
-          description,
-        });
+        const description = descLines.slice(0, 2).join(" - ");
+        const cleanMinute = minute ? minute.replace(/[^0-9'+]/g, "") : null;
+        if (cleanMinute || (description && description.length > 5)) {
+          items.push({ type: labelMatch, minute: cleanMinute, description: description || null });
+        }
       }
       return items;
     });
