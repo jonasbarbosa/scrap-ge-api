@@ -583,6 +583,7 @@ function mergePartidas(existing, scraped) {
       old.local = np.local;
       if (Object.prototype.hasOwnProperty.call(np, "dataLabel")) old.dataLabel = np.dataLabel ?? null;
       if (Object.prototype.hasOwnProperty.call(np, "hora")) old.hora = np.hora ?? null;
+      if (Object.prototype.hasOwnProperty.call(np, "href")) old.href = np.href ?? null;
     } else {
       map.set(np.id, np);
     }
@@ -1470,6 +1471,22 @@ app.get("/ge-live/:matchId?", async (req, res) => {
   }
   if (!match) {
     return res.status(404).json({ error: "Match not found or not live" });
+  }
+  // Build href from match data if missing
+  if (!match.href) {
+    const base = "https://ge.globo.com/futebol/copa-do-mundo/jogo";
+    let datePart = "";
+    if (match.data) {
+      const d = new Date(match.data);
+      if (!isNaN(d.getTime())) {
+        datePart = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+      }
+    }
+    const name1 = (match.time1 || match.sigla1 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const name2 = (match.time2 || match.sigla2 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (datePart && name1 && name2) {
+      match.href = `${base}/${datePart}/${name1}-${name2}.ghtml`;
+    }
   }
   let attempts = 0;
   let data = null;
