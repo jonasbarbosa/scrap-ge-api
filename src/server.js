@@ -1601,10 +1601,19 @@ async function fetchLiveDetails(match) {
       for (let i = 0; i < lines.length; i++) {
         const labelMatch = eventLabels.find((el) => lines[i].includes(el));
         if (!labelMatch) continue;
-        const minute = [lines[i - 1], lines[i], lines[i + 1]]
-          .find((l) => l && (/^\d+'/.test(l) || /^\d+:\d+/.test(l)));
-        const description = [lines[i - 2], lines[i - 1], lines[i], lines[i + 1], lines[i + 2]]
-          .find((l) => l && l.length > 15 && !eventLabels.some((el) => l.includes(el)) && !(/^\d+'/.test(l)));
+        const window = lines.slice(Math.max(0, i - 3), i + 4);
+        const minute = window.find((l) => /^\d+'/.test(l) || /^\d+:\d+/.test(l) || /\d+'$/.test(l));
+        const description = window.find((l) => l !== lines[i] && !labelMatch && l.length > 10 && !/^\d+[':]/.test(l));
+        if (minute && !description) {
+          const idxMinute = window.indexOf(minute);
+          if (idxMinute < window.length - 1) {
+            const next = window[idxMinute + 1];
+            if (next && next.length > 2 && !eventLabels.some((el) => next.includes(el))) {
+              items.push({ type: labelMatch, minute: minute.replace(/[^0-9'+:]/g, ""), description: next });
+              continue;
+            }
+          }
+        }
         items.push({
           type: labelMatch,
           minute: minute ? minute.replace(/[^0-9'+:]/g, "") : null,
@@ -1621,16 +1630,14 @@ async function fetchLiveDetails(match) {
       const rawText = container.innerText || container.textContent || "";
       const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
 
-      const isNum = (s) => /^\d+$/.test(s.replace("%", "").trim());
+      const isNumVal = (s) => /^\d+%?$/.test(s.trim());
       const findStat = (label) => {
         const idx = lines.findIndex((l) => l.includes(label));
         if (idx === -1) return null;
-        const around = lines.slice(Math.max(0, idx - 2), idx + 3);
-        const nums = around
-          .filter((l) => l !== lines[idx] && isNum(l) && l.length < 6)
-          .map((l) => l.trim());
+        const around = lines.slice(Math.max(0, idx - 3), idx + 4);
+        const nums = around.filter((l) => l !== lines[idx] && l.length < 6 && isNumVal(l));
         if (nums.length >= 2) return `${nums[0]} / ${nums[1]}`;
-        if (nums.length === 1) return nums[0] + " / ?";
+        if (nums.length === 1) return nums[0];
         return null;
       };
 
