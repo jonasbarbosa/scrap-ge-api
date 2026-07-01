@@ -15,6 +15,9 @@ const DATA_DIR = join(__dirname, "..", "data");
 const PARTIDAS_FILE = join(DATA_DIR, "partidas.json");
 
 let cache = { data: null, timestamp: 0 };
+// Live match details cache (matchId → { data, ts })
+const liveCache = new Map();
+const GE_LIVE_TTL_MS = parseInt(process.env.GE_LIVE_TTL_MS) || 30000; // 30 s default
 
 // ── Appwrite config (optional — sync enabled when all vars are set) ──
 
@@ -1453,6 +1456,26 @@ app.get("/grupos", async (req, res) => {
 
 // ── Background polling ────────────────────────────────────────────
 
+// ── Live match details endpoint ───────────────────────────────────
+app.get("/ge-live/:matchId", async (req, res) => {
+  const { matchId } = req.params;
+  const partidas = loadPartidas();
+  const match = partidas.find(p => p.id === matchId && p.status === "ao-vivo");
+  if (!match) {
+    return res.status(404).json({ error: "Match not found or not live" });
+  }
+  let attempts = 0;
+  let data = null;
+  while (attempts < 3 && !data) {
+    data = await fetchLiveDetails(match);
+    attempts++;
+  }
+  if (!data) {
+    return res.status(504).json({ error: "Dados indisponíveis no momento" });
+  }
+  res.json(data);
+});
+
 const POLL_NORMAL = 5 * 60 * 1000;   // 5 min when no live games
 const POLL_LIVE = 120 * 1000;          // 2 min when games are live
 let currentInterval = POLL_NORMAL;
@@ -1511,6 +1534,58 @@ async function pollScrape() {
 }
 
 // ── Start ─────────────────────────────────────────────────────────
+
+// Fetch live match details (events + stats)
+async function fetchLiveDetails(match) {
+  if (!match.href) return null;
+  const cached = liveCache.get(match.id);
+  if (cached && Date.now() - cached.ts < GE_LIVE_TTL_MS) {
+    return cached.data;
+  }
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(match.href, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(2000);
+
+    const events = await page.evaluate(() => {
+      const items = document.querySelectorAll(".timeline__item, .evento");
+      return Array.from(items).map((el) => {
+        const minute = el.querySelector(".timeline__minuto, .minuto")?.textContent?.trim();
+        const type = el.querySelector(".timeline__tipo, .tipo")?.textContent?.trim();
+        const description = el.querySelector(".timeline__descricao, .descricao")?.textContent?.trim();
+        return { minute, type, description };
+      }).filter(e => e.minute);
+    });
+
+    const statistics = await page.evaluate(() => {
+      const g = (sel) => document.querySelector(sel)?.textContent?.trim() || null;
+      return {
+        possession: g(".estatistica__posse .valor"),
+        shots: g(".estatistica__finalizacoes .valor"),
+        yellowCards: g(".estatistica__cartoes-amarelos .valor"),
+        redCards: g(".estatistica__cartoes-vermelhos .valor"),
+        corners: g(".estatistica__escanteios .valor"),
+      };
+    });
+
+    const result = {
+      matchId: match.id,
+      score: match.placar1 != null && match.placar2 != null ? `${match.placar1} x ${match.placar2}` : null,
+      status: match.status,
+      events,
+      statistics,
+    };
+    liveCache.set(match.id, { data: result, ts: Date.now() });
+    return result;
+  } catch (err) {
+    console.warn(`[fetchLiveDetails] error for ${match.id}: ${err.message}`);
+    return null;
+  } finally {
+    await browser.close();
+  }
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
