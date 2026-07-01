@@ -1457,10 +1457,17 @@ app.get("/grupos", async (req, res) => {
 // ── Background polling ────────────────────────────────────────────
 
 // ── Live match details endpoint ───────────────────────────────────
-app.get("/ge-live/:matchId", async (req, res) => {
+app.get("/ge-live/:matchId?", async (req, res) => {
+  // Accept either a path matchId (scraper internal id) or query params (time1, time2, optional fase)
   const { matchId } = req.params;
+  const { time1, time2, fase } = req.query as any;
   const partidas = loadPartidas();
-  const match = partidas.find(p => p.id === matchId && p.status === "ao-vivo");
+  let match: any = null;
+  if (matchId) {
+    match = partidas.find(p => p.id === matchId && p.status === "ao-vivo");
+  } else if (time1 && time2) {
+    match = partidas.find(p => p.time1 === time1 && p.time2 === time2 && p.status === "ao-vivo" && (!fase || p.fase === fase));
+  }
   if (!match) {
     return res.status(404).json({ error: "Match not found or not live" });
   }
