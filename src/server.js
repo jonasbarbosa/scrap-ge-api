@@ -1594,28 +1594,22 @@ async function fetchLiveDetails(match) {
 
     const events = await page.evaluate(() => {
       const items = [];
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      const allText = document.body.innerText || "";
+      const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
+
       const eventLabels = ["GOL", "Cartão amarelo", "Cartão vermelho", "GOL CONTRA", "PÊNALTI PERDIDO", "PÊNALTI"];
-      while (walker.nextNode()) {
-        const text = walker.currentNode.textContent.trim();
-        if (eventLabels.includes(text)) {
-          const span = walker.currentNode.parentElement;
-          if (!span) continue;
-          let container = span.closest("div");
-          if (!container) continue;
-          for (let i = 0; i < 5 && container; i++) {
-            const allText = container.textContent || "";
-            const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
-            if (lines.length >= 2) {
-              const minute = lines.find((l) => /^\d+'/.test(l) || /^\d+:\d+/.test(l)) || null;
-              const descLines = lines.filter((l) => l !== text && !/^\d+'/.test(l) && !/^\d+:\d+/.test(l) && l.length > 10);
-              const description = descLines[0] || allText.substring(0, 200).trim();
-              items.push({ type: text, minute, description });
-              break;
-            }
-            container = container.parentElement;
-          }
-        }
+      for (let i = 0; i < lines.length; i++) {
+        const labelMatch = eventLabels.find((el) => lines[i].includes(el));
+        if (!labelMatch) continue;
+        const minute = [lines[i - 1], lines[i], lines[i + 1]]
+          .find((l) => l && (/^\d+'/.test(l) || /^\d+:\d+/.test(l)));
+        const description = [lines[i - 2], lines[i - 1], lines[i], lines[i + 1], lines[i + 2]]
+          .find((l) => l && l.length > 15 && !eventLabels.some((el) => l.includes(el)) && !(/^\d+'/.test(l)));
+        items.push({
+          type: labelMatch,
+          minute: minute ? minute.replace(/[^0-9'+:]/g, "") : null,
+          description: description || null,
+        });
       }
       return items;
     });
