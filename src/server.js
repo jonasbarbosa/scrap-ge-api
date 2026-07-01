@@ -1460,7 +1460,7 @@ app.get("/grupos", async (req, res) => {
 app.get("/ge-live/:matchId?", async (req, res) => {
   // Accept either a path matchId (scraper internal id) or query params (time1, time2, optional fase)
   const { matchId } = req.params;
-  const { time1, time2, fase } = req.query as any;
+  const { time1, time2, fase } = req.query;
   const partidas = loadPartidas();
   let match: any = null;
   if (matchId) {
