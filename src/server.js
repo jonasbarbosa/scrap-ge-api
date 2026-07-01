@@ -1594,49 +1594,45 @@ async function fetchLiveDetails(match) {
 
     const events = await page.evaluate(() => {
       const items = [];
+      const seen = new Set();
       const eventLabels = ["GOL", "GOL CONTRA", "Cartão amarelo", "Cartão vermelho", "PÊNALTI PERDIDO", "PÊNALTI", "SUBSTITUIÇÃO", "Substituição"];
       const mainEl = document.querySelector("main");
       if (mainEl) {
-        const allEls = mainEl.querySelectorAll("*");
-        for (const el of allEls) {
+        const timeEls = mainEl.querySelectorAll("*");
+        for (const el of timeEls) {
           const text = (el.textContent || "").trim();
           const timeMatch = text.match(/^(\d+)'/);
           if (!timeMatch) continue;
-          const parent = el.closest("[class]");
-          if (!parent || parent.textContent.length > 500) continue;
-          const label = eventLabels.find((l) => parent.textContent.includes(l));
+          let parent = el.parentElement;
+          let label = null;
+          while (parent && parent.textContent.length < 800) {
+            label = eventLabels.find((l) => parent.textContent.includes(l));
+            if (label) break;
+            parent = parent.parentElement;
+          }
           if (!label) continue;
-          const parentText = parent.textContent;
-          const desc = parentText
-            .replace(label, "")
-            .replace(timeMatch[0], "")
-            .trim();
-          const minute = timeMatch[1] + "'";
-          if (!items.find((i) => i.minute === minute && i.type === label)) {
-            items.push({ type: label, minute, description: desc || null });
+          const pText = parent.textContent;
+          const desc = pText.replace(label, "").replace(timeMatch[0], "").trim();
+          const key = timeMatch[1] + "'-" + label;
+          if (!seen.has(key)) {
+            seen.add(key);
+            items.push({ type: label, minute: timeMatch[1] + "'", description: desc || null });
           }
         }
       }
-      if (items.length === 0) {
+      if (items.length < 2) {
         const allText = document.body.innerText || "";
         const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
-        for (let i = 0; i < lines.length; i++) {
+        for (let i = 1; i < lines.length - 1; i++) {
           const labelMatch = eventLabels.find((el) => lines[i].includes(el));
           if (!labelMatch) continue;
-          const window = lines.slice(Math.max(0, i - 5), Math.min(lines.length, i + 6));
-          const minute = window.find((l) => /^\d+'/.test(l));
+          const minute = [lines[i - 1], lines[i + 1]].find((l) => /^\d+'/.test(l));
           if (!minute) continue;
-          const descLines = window.filter((l) => {
-            if (l === lines[i] || l === minute) return false;
-            if (eventLabels.some((el) => l.includes(el))) return false;
-            return l.length > 5;
-          });
-          const cleanMinute = minute.replace(/[^0-9'+]/g, "").replace(/[^\d']/g, "");
-          items.push({
-            type: labelMatch,
-            minute: cleanMinute.replace(/^(\d+').*/, "$1"),
-            description: descLines.slice(0, 2).join(" - ") || null,
-          });
+          const key = minute.replace(/[^0-9']/g, "") + "-" + labelMatch;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const desc = [lines[i - 1], lines[i + 1]].find((l) => l !== minute && l.length > 5) || null;
+          items.push({ type: labelMatch, minute: minute.replace(/[^0-9']/g, ""), description: desc });
         }
       }
       return items;
