@@ -1596,44 +1596,20 @@ async function fetchLiveDetails(match) {
       const items = [];
       const seen = new Set();
       const eventLabels = ["GOL", "GOL CONTRA", "Cartão amarelo", "Cartão vermelho", "PÊNALTI PERDIDO", "PÊNALTI", "SUBSTITUIÇÃO", "Substituição"];
-      const mainEl = document.querySelector("main");
-      if (mainEl) {
-        const timeEls = mainEl.querySelectorAll("*");
-        for (const el of timeEls) {
-          const text = (el.textContent || "").trim();
-          const timeMatch = text.match(/^(\d+)'/);
-          if (!timeMatch) continue;
-          let parent = el.parentElement;
-          let label = null;
-          while (parent && parent.textContent.length < 800) {
-            label = eventLabels.find((l) => parent.textContent.includes(l));
-            if (label) break;
-            parent = parent.parentElement;
-          }
-          if (!label) continue;
-          const pText = parent.textContent;
-          const desc = pText.replace(label, "").replace(timeMatch[0], "").trim();
-          const key = timeMatch[1] + "'-" + label;
-          if (!seen.has(key)) {
-            seen.add(key);
-            items.push({ type: label, minute: timeMatch[1] + "'", description: desc || null });
-          }
-        }
-      }
-      if (items.length < 2) {
-        const allText = document.body.innerText || "";
-        const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
-        for (let i = 1; i < lines.length - 1; i++) {
-          const labelMatch = eventLabels.find((el) => lines[i].includes(el));
-          if (!labelMatch) continue;
-          const minute = [lines[i - 1], lines[i + 1]].find((l) => /^\d+'/.test(l));
-          if (!minute) continue;
-          const key = minute.replace(/[^0-9']/g, "") + "-" + labelMatch;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const desc = [lines[i - 1], lines[i + 1]].find((l) => l !== minute && l.length > 5) || null;
-          items.push({ type: labelMatch, minute: minute.replace(/[^0-9']/g, ""), description: desc });
-        }
+      const allText = document.body.innerText || "";
+      const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
+      for (let i = 0; i < lines.length; i++) {
+        const labelMatch = eventLabels.find((el) => lines[i].includes(el));
+        if (!labelMatch) continue;
+        const window = lines.slice(Math.max(0, i - 3), Math.min(lines.length, i + 4));
+        const minute = window.find((l) => /^\d+'/.test(l));
+        if (!minute) continue;
+        const cleanMinute = minute.replace(/[^0-9']/g, "");
+        const key = cleanMinute + "-" + labelMatch;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const desc = window.find((l) => l !== lines[i] && l !== minute && l.length > 5 && !eventLabels.some((el) => l.includes(el)));
+        items.push({ type: labelMatch, minute: cleanMinute, description: desc || null });
       }
       return items;
     });
