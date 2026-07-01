@@ -1462,7 +1462,7 @@ app.get("/ge-live/:matchId?", async (req, res) => {
   const { matchId } = req.params;
   const { time1, time2, fase } = req.query;
   const partidas = loadPartidas();
-  let match: any = null;
+  let match = null;
   if (matchId) {
     match = partidas.find(p => p.id === matchId && p.status === "ao-vivo");
   } else if (time1 && time2) {
