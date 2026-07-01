@@ -1627,19 +1627,23 @@ async function fetchLiveDetails(match) {
       const rawText = container.innerText || container.textContent || "";
       const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
 
-      const findVal = (label) => {
+      const isNum = (s) => /^\d+$/.test(s);
+      const findStat = (label) => {
         const idx = lines.findIndex((l) => l.includes(label));
         if (idx === -1) return null;
-        const vals = lines.slice(idx, idx + 3).filter((l) => /^\d+$/.test(l.replace(/\D/g, "") && l.length < 5));
-        return vals.length >= 2 ? `${vals[0]} / ${vals[1]}` : vals[0] || null;
+        const around = lines.slice(Math.max(0, idx - 2), idx + 3);
+        const nums = around.filter((l) => isNum(l.replace("%", "").trim()) && l.length < 5);
+        if (nums.length >= 2) return `${nums[0]} / ${nums[1]}`;
+        if (nums.length === 1) return nums[0] + " / ?";
+        return null;
       };
 
       return {
-        possession: findVal("Posse de bola") || findVal("Posse"),
-        shots: findVal("Finaliza") || findVal("Finalizações"),
-        yellowCards: findVal("Cartão amarelo") || findVal("Amarelo"),
-        redCards: findVal("Cartão vermelho") || findVal("Vermelho"),
-        corners: findVal("Escanteios") || findVal("Escanteio"),
+        possession: findStat("Posse de bola") || findStat("Posse"),
+        shots: findStat("Finaliza") || findStat("Finalizações"),
+        yellowCards: findStat("Cartão amarelo") || findStat("Amarelo"),
+        redCards: findStat("Cartão vermelho") || findStat("Vermelho"),
+        corners: findStat("Escanteios") || findStat("Escanteio"),
       };
     });
 
