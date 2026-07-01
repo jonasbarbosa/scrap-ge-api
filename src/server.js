@@ -1567,7 +1567,11 @@ async function fetchLiveDetails(match) {
   if (cached && Date.now() - cached.ts < GE_LIVE_TTL_MS) {
     return cached.data;
   }
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  });
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -1660,7 +1664,8 @@ async function fetchLiveDetails(match) {
     liveCache.set(match.id, { data: result, ts: Date.now() });
     return result;
   } catch (err) {
-    console.warn(`[fetchLiveDetails] error for ${match.id}: ${err.message}`);
+    console.error(`[fetchLiveDetails] error for ${match.id} (${match.time1} x ${match.time2}): ${err.message}`);
+    if (err.stack) console.error(err.stack.split('\n').slice(0, 5).join('\n'));
     return null;
   } finally {
     await browser.close();
