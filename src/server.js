@@ -1627,12 +1627,14 @@ async function fetchLiveDetails(match) {
       const rawText = container.innerText || container.textContent || "";
       const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
 
-      const isNum = (s) => /^\d+$/.test(s);
+      const isNum = (s) => /^\d+$/.test(s.replace("%", "").trim());
       const findStat = (label) => {
         const idx = lines.findIndex((l) => l.includes(label));
         if (idx === -1) return null;
         const around = lines.slice(Math.max(0, idx - 2), idx + 3);
-        const nums = around.filter((l) => isNum(l.replace("%", "").trim()) && l.length < 5);
+        const nums = around
+          .filter((l) => l !== lines[idx] && isNum(l) && l.length < 6)
+          .map((l) => l.trim());
         if (nums.length >= 2) return `${nums[0]} / ${nums[1]}`;
         if (nums.length === 1) return nums[0] + " / ?";
         return null;
