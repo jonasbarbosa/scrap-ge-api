@@ -1593,26 +1593,43 @@ async function fetchLiveDetails(match) {
     await page.waitForTimeout(10000);
 
     const events = await page.evaluate(() => {
-      const root = document.querySelector("[class*='lance'], [class*='Lance'], [class*='timeline'], [class*='Timeline'], main, article");
-      const src = root ? (root.innerText || "") : (document.body.innerText || "");
-      const lines = src.split("\n").map((l) => l.trim()).filter(Boolean);
       const items = [];
       const eventLabels = ["GOL", "GOL CONTRA", "Cartão amarelo", "Cartão vermelho", "PÊNALTI PERDIDO", "PÊNALTI"];
-
-      for (let i = 0; i < lines.length; i++) {
-        const labelMatch = eventLabels.find((el) => lines[i].includes(el));
-        if (!labelMatch) continue;
-        const window = lines.slice(Math.max(0, i - 5), Math.min(lines.length, i + 6));
-        const minute = window.find((l) => /^\d+'/.test(l) || /\d+[':]\d*$/.test(l));
-        const descLines = window.filter((l) => {
-          if (l === lines[i] || eventLabels.some((el) => l.includes(el))) return false;
-          if (/^\d+[':]/.test(l) || /\d+[':]\d*$/.test(l)) return false;
-          return l.length > 5 && !l.includes("BÉLGICA VS. SENEGAL");
+      const allEls = document.querySelectorAll("main *");
+      for (const el of allEls) {
+        const text = el.textContent || "";
+        const timeMatch = text.match(/^(\d+)'[^\\d]*$/m);
+        if (!timeMatch) continue;
+        const parent = el.closest("[class]");
+        if (!parent || parent.textContent.length > 500) continue;
+        const label = eventLabels.find((l) => parent.textContent.includes(l));
+        if (!label) continue;
+        const desc = parent.textContent.replace(label, "").replace(timeMatch[0], "").trim();
+        items.push({
+          type: label,
+          minute: timeMatch[1] + "'",
+          description: desc || null,
         });
-        const description = descLines.slice(0, 2).join(" - ");
-        const cleanMinute = minute ? minute.replace(/[^0-9'+]/g, "") : null;
-        if (cleanMinute || (description && description.length > 5)) {
-          items.push({ type: labelMatch, minute: cleanMinute, description: description || null });
+      }
+      if (items.length === 0) {
+        const allText = document.body.innerText || "";
+        const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
+        for (let i = 0; i < lines.length; i++) {
+          const labelMatch = eventLabels.find((el) => lines[i].includes(el));
+          if (!labelMatch) continue;
+          const window = lines.slice(Math.max(0, i - 5), Math.min(lines.length, i + 6));
+          const minute = window.find((l) => /^\d+'/.test(l) || /\d+[':]\d*$/.test(l));
+          if (!minute) continue;
+          const descLines = window.filter((l) => {
+            if (l === lines[i] || eventLabels.some((el) => l.includes(el))) return false;
+            if (/^\d+'/.test(l) || /\d+[':]\d*$/.test(l)) return false;
+            return l.length > 5;
+          });
+          items.push({
+            type: labelMatch,
+            minute: minute.replace(/[^0-9'+]/g, ""),
+            description: descLines.slice(0, 2).join(" - ") || null,
+          });
         }
       }
       return items;
