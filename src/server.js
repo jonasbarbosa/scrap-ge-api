@@ -780,7 +780,7 @@ async function scrape() {
               ?.textContent?.trim()
               ?.toLowerCase();
             let status = "agendado";
-            if (broadcast?.includes("tempo real")) {
+            if (broadcast?.includes("tempo real") || broadcast?.includes("ao vivo")) {
               status = "ao-vivo";
             } else if (broadcast?.includes("saiba como foi")) {
               if (startDate) {
@@ -898,7 +898,7 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
 
             const broadcast = link?.querySelector(".jogo__transmissao--broadcast, .placar-jogo-tag-transmissao .tabela-tag-transmissao")?.textContent?.trim()?.toLowerCase();
             let status = "agendado";
-            if (broadcast?.includes("tempo real")) {
+            if (broadcast?.includes("tempo real") || broadcast?.includes("ao vivo")) {
               status = "ao-vivo";
             } else if (broadcast?.includes("saiba como foi")) {
               if (startDate) {
