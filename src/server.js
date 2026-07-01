@@ -813,6 +813,7 @@ async function scrape() {
               local: local || null,
               dataLabel: dataLabel || null,
               hora: hora || null,
+              href: link?.href || null,
             });
           });
         });
@@ -1121,6 +1122,7 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
           local: jogo.local,
           dataLabel: jogo.dataLabel,
           hora: jogo.hora,
+          href: jogo.href || null,
         });
       }
       for (const j of knockoutJogos) {
