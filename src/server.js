@@ -1467,12 +1467,12 @@ app.get("/ge-live/:matchId?", async (req, res) => {
   const partidas = loadPartidas();
   let match = null;
   if (matchId) {
-    match = partidas.find(p => p.id === matchId && p.status === "ao-vivo");
+    match = partidas.find(p => p.id === matchId);
   } else if (time1 && time2) {
-    match = partidas.find(p => p.time1 === time1 && p.time2 === time2 && p.status === "ao-vivo" && (!fase || p.fase === fase));
+    match = partidas.find(p => p.time1 === time1 && p.time2 === time2 && (!fase || p.fase === fase));
   }
   if (!match) {
-    return res.status(404).json({ error: "Match not found or not live" });
+    return res.status(404).json({ error: "Match not found" });
   }
   // Build href from match data if missing
   if (!match.href) {
@@ -1576,77 +1576,182 @@ async function fetchLiveDetails(match) {
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    await page.route("**/*", (route) => {
-      const url = route.request().url();
-      if (url.includes("doubleclick") || url.includes("googleads") || url.includes("pubmatic") ||
-          url.includes("criteo") || url.includes("rubicon") || url.includes("adsrvr") ||
-          url.includes("adnami") || url.includes("temu") || url.includes("rlcdn") ||
-          url.includes("id5-sync") || url.includes("permutive") || url.includes("thesports01") ||
-          url.includes("sentry") || url.includes("analytics") || url.includes("imasdk") ||
-          url.includes("datadome") || url.includes("smartadserver") || url.includes("prebid")) {
-        return route.abort();
-      }
-      return route.continue();
-    });
+    await page.goto(match.href, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    await page.goto(match.href, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(10000);
-
-    const events = await page.evaluate(() => {
-      const items = [];
-      const seen = new Set();
-      const eventLabels = ["GOL", "GOL CONTRA", "Cartão amarelo", "Cartão vermelho", "PÊNALTI PERDIDO", "PÊNALTI", "SUBSTITUIÇÃO", "Substituição"];
-      const allText = document.body.innerText || "";
-      const lines = allText.split("\n").map((l) => l.trim()).filter(Boolean);
-      for (let i = 0; i < lines.length; i++) {
-        const labelMatch = eventLabels.find((el) => lines[i].includes(el));
-        if (!labelMatch) continue;
-        const window = lines.slice(Math.max(0, i - 3), Math.min(lines.length, i + 4));
-        const minute = window.find((l) => /^\d+'/.test(l));
-        if (!minute) continue;
-        const cleanMinute = minute.replace(/[^0-9']/g, "");
-        const key = cleanMinute + "-" + labelMatch;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const desc = window.find((l) => l !== lines[i] && l !== minute && l.length > 5 && !eventLabels.some((el) => l.includes(el)));
-        items.push({ type: labelMatch, minute: cleanMinute, description: desc || null });
-      }
-      return items;
-    });
-
-    const statistics = await page.evaluate(() => {
-      const container = document.getElementById("enrichment-tab-estatisticas");
-      if (!container) return null;
-
-      const rawText = container.innerText || container.textContent || "";
-      const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
-
-      const isNumVal = (s) => /^\d+%?$/.test(s.trim());
-      const findStat = (label) => {
-        const idx = lines.findIndex((l) => l.includes(label));
-        if (idx === -1) return null;
-        const around = lines.slice(Math.max(0, idx - 3), idx + 4);
-        const nums = around.filter((l) => l !== lines[idx] && l.length < 6 && isNumVal(l));
-        if (nums.length >= 2) return `${nums[0]} / ${nums[1]}`;
-        if (nums.length === 1) return nums[0];
-        return null;
-      };
-
+    const trv2 = await page.evaluate(() => {
+      const t = window.trv2;
+      if (!t) return null;
       return {
-        possession: findStat("Posse de bola") || findStat("Posse"),
-        shots: findStat("Finaliza") || findStat("Finalizações"),
-        yellowCards: findStat("Cartão amarelo") || findStat("Amarelo"),
-        redCards: findStat("Cartão vermelho") || findStat("Vermelho"),
-        corners: findStat("Escanteios") || findStat("Escanteio"),
+        stats: {
+          home: t.statistics?.homeTeam || null,
+          away: t.statistics?.awayTeam || null,
+        },
+        plays: (t.plays || []).map((p) => ({
+          moment: p.moment,
+          period: p.period?.id || null,
+          periodLabel: p.period?.label || null,
+          playTypeId: p.playType?.id || null,
+          playTypeLabel: p.playType?.label || null,
+          title: p.title || null,
+          athlete: p.details?.athlete?.popularName || p.details?.athlete?.name || null,
+          athleticTeam: p.details?.team?.id || null,
+          kind: p.details?.kind || null,
+        })),
+        detailedScoreboard: t.transmission?.match?.detailedScoreboard || null,
       };
     });
+
+    const rm = await page.evaluate(() => {
+      const data = window.roundMatches;
+      if (!data) return null;
+      const matches = data.championship || [];
+      return matches.length > 0 ? matches.map((m) => ({
+        time1: m.homeTeam?.popularName || m.homeTeam?.name || null,
+        time2: m.awayTeam?.popularName || m.awayTeam?.name || null,
+        penalty: m.match?.scoreboard?.penalty || null,
+      })) : null;
+    });
+
+    const { time1, time2 } = match;
+
+    const isHome = (teamId) => teamId === "home" || teamId === "mandante";
+    const deduceTeam = (play) => {
+      if (play.athleticTeam === "home") return "home";
+      if (play.athleticTeam === "away") return "away";
+      return play.title?.includes(time1) ? "home" : play.title?.includes(time2) ? "away" : null;
+    };
+
+    const goals = (trv2.plays || []).filter((p) => p.playTypeId === "GOAL" || p.playTypeId === "PENALTY_GOAL");
+    const firstHalfGoals = goals.filter((p) => p.period === "PRIMEIRO_TEMPO");
+    const secondHalfGoals = goals.filter((p) => p.period === "SEGUNDO_TEMPO");
+    const extraTimeGoals = goals.filter((p) => p.period === "POS_JOGO" || p.period === "PRIMEIRO_TEMPO_PRORROGACAO" || p.period === "SEGUNDO_TEMPO_PRORROGACAO");
+
+    const countSide = (arr, side) => arr.filter((g) => deduceTeam(g) === side).length;
+
+    const goalsByHalf = {
+      firstHalf: { home: countSide(firstHalfGoals, "home"), away: countSide(firstHalfGoals, "away") },
+      secondHalf: { home: countSide(secondHalfGoals, "home"), away: countSide(secondHalfGoals, "away") },
+      extraTime: extraTimeGoals.length > 0 ? { home: countSide(extraTimeGoals, "home"), away: countSide(extraTimeGoals, "away") } : null,
+    };
+
+    const halftimeHome = countSide(firstHalfGoals, "home");
+    const halftimeAway = countSide(firstHalfGoals, "away");
+    const halftimeScore = { home: halftimeHome, away: halftimeAway };
+
+    const finalHome = match.placar1;
+    const finalAway = match.placar2;
+
+    let comebackInfo = null;
+    if (finalHome != null && finalAway != null) {
+      if (halftimeAway > halftimeHome && finalHome > finalAway) {
+        comebackInfo = { team: time1, hadComeback: true, description: `${time1} virou o placar no 2º tempo` };
+      } else if (halftimeHome > halftimeAway && finalAway > finalHome) {
+        comebackInfo = { team: time2, hadComeback: true, description: `${time2} virou o placar no 2º tempo` };
+      } else if (halftimeHome === halftimeAway && halftimeHome > 0 && (finalHome !== finalAway)) {
+        comebackInfo = { hadComeback: false, note: "placar empatado no intervalo com definição no 2º tempo" };
+      }
+    }
+
+    const scoringTimeline = goals.map((g) => ({
+      minute: g.moment || null,
+      half: g.period === "PRIMEIRO_TEMPO" ? "first" : g.period === "SEGUNDO_TEMPO" ? "second" : g.period === "POS_JOGO" || g.period?.startsWith("PRIMEIRO_TEMPO_P") ? "extraTime" : g.period,
+      team: deduceTeam(g),
+      scorer: g.athlete,
+      kind: g.kind || g.playTypeId,
+    }));
+
+    let penalties = null;
+    if (rm) {
+      const m = rm.find((x) =>
+        (x.time1 && x.time1 === time1) && (x.time2 && x.time2 === time2)
+      );
+      if (m?.penalty) {
+        penalties = { home: m.penalty.home, away: m.penalty.away };
+      }
+    }
+
+    const extraStats = trv2.stats?.home && trv2.stats?.away
+      ? {
+          home: {
+            offside: trv2.stats.home.offSide?.total ?? null,
+            fouls: trv2.stats.home.foulMade?.total ?? null,
+            tackles: trv2.stats.home.tackle?.total ?? null,
+            defense: trv2.stats.home.defense?.total ?? null,
+            goalFinish: trv2.stats.home.goalFinish?.total ?? null,
+            blockedFinish: trv2.stats.home.blockedFinish?.total ?? null,
+            ballOnPost: trv2.stats.home.ballOnThePost?.total ?? null,
+            penaltyReceived: trv2.stats.home.penaltyReceived?.total ?? null,
+            passesTotal: trv2.stats.home.totalPasses?.total ?? null,
+            passesCorrect: trv2.stats.home.rightPasses?.total ?? null,
+          },
+          away: {
+            offside: trv2.stats.away.offSide?.total ?? null,
+            fouls: trv2.stats.away.foulMade?.total ?? null,
+            tackles: trv2.stats.away.tackle?.total ?? null,
+            defense: trv2.stats.away.defense?.total ?? null,
+            goalFinish: trv2.stats.away.goalFinish?.total ?? null,
+            blockedFinish: trv2.stats.away.blockedFinish?.total ?? null,
+            ballOnPost: trv2.stats.away.ballOnThePost?.total ?? null,
+            penaltyReceived: trv2.stats.away.penaltyReceived?.total ?? null,
+            passesTotal: trv2.stats.away.totalPasses?.total ?? null,
+            passesCorrect: trv2.stats.away.rightPasses?.total ?? null,
+          },
+        }
+      : null;
+
+    const evt = trv2.plays
+      .filter((p) => p.playTypeId !== "NARRATIVE" && p.playTypeId !== "IMPORTANT" && p.title)
+      .map((p) => ({
+        type: p.playTypeLabel || p.playTypeId,
+        minute: p.moment || null,
+        half: p.periodLabel || p.period || null,
+        description: p.title || null,
+      }));
+
+    const possessionStat = trv2.stats?.home?.ballPossession?.total != null && trv2.stats?.away?.ballPossession?.total != null
+      ? `${trv2.stats.home.ballPossession.total} / ${trv2.stats.away.ballPossession.total}`
+      : null;
+
+    const shotsStat = trv2.stats?.home?.goalFinish?.total != null && trv2.stats?.home?.wrongFinish?.total != null
+      ? `${(trv2.stats.home.goalFinish.total || 0) + (trv2.stats.home.wrongFinish?.total || 0) + (trv2.stats.home.blockedFinish?.total || 0)} / ${(trv2.stats.away.goalFinish?.total || 0) + (trv2.stats.away.wrongFinish?.total || 0) + (trv2.stats.away.blockedFinish?.total || 0)}`
+      : null;
+
+    const cornersStat = trv2.stats?.home?.cornerKick?.total != null && trv2.stats?.away?.cornerKick?.total != null
+      ? `${trv2.stats.home.cornerKick.total} / ${trv2.stats.away.cornerKick.total}`
+      : null;
+
+    const yellowCardsStat = trv2.stats?.home?.yellowCardReceived?.total != null
+      ? `${trv2.stats.home.yellowCardReceived.total} / ${trv2.stats.away?.yellowCardReceived?.total ?? 0}`
+      : null;
+
+    const redCardsStat = trv2.stats?.home?.redCardReceived?.total != null
+      ? `${trv2.stats.home.redCardReceived.total} / ${trv2.stats.away?.redCardReceived?.total ?? 0}`
+      : null;
 
     const score =
       match.placar1 != null && match.placar2 != null
         ? `${match.placar1} x ${match.placar2}`
         : null;
 
-    const result = { matchId: match.id, score, status: match.status, events, statistics };
+    const result = {
+      matchId: match.id,
+      score,
+      status: match.status,
+      halftimeScore,
+      goalsByHalf,
+      comebackInfo,
+      scoringTimeline,
+      penalties,
+      statistics: {
+        possession: possessionStat,
+        shots: shotsStat,
+        yellowCards: yellowCardsStat,
+        redCards: redCardsStat,
+        corners: cornersStat,
+      },
+      extraStats,
+      events: evt.slice(0, 30),
+    };
     liveCache.set(match.id, { data: result, ts: Date.now() });
     return result;
   } catch (err) {
