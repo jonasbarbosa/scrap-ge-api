@@ -1620,15 +1620,20 @@ async function fetchLiveDetails(match) {
     const { time1, time2 } = match;
 
     const isHome = (play) => {
-      if (play.teamId === trv2.homeTeamId) return true;
-      if (play.teamId === trv2.awayTeamId) return false;
+      if (play.teamId && trv2.homeTeamId && play.teamId === trv2.homeTeamId) return true;
+      if (play.teamId && trv2.awayTeamId && play.teamId === trv2.awayTeamId) return false;
+      if (play.teamId && trv2.homeTeamId && String(play.teamId) === String(trv2.homeTeamId)) return true;
+      if (play.teamId && trv2.awayTeamId && String(play.teamId) === String(trv2.awayTeamId)) return false;
       return null;
     };
     const deduceTeam = (play) => {
       const home = isHome(play);
       if (home === true) return "home";
       if (home === false) return "away";
-      return play.title?.includes(time1) ? "home" : play.title?.includes(time2) ? "away" : null;
+      const t = (play.title || "").toLowerCase();
+      if (t.includes((time1 || "").toLowerCase())) return "home";
+      if (t.includes((time2 || "").toLowerCase())) return "away";
+      return null;
     };
 
     const goals = (trv2.plays || []).filter((p) => p.playTypeId === "GOAL" || p.playTypeId === "PENALTY_GOAL");
