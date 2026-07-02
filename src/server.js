@@ -1581,7 +1581,12 @@ async function fetchLiveDetails(match) {
     const trv2 = await page.evaluate(() => {
       const t = window.trv2;
       if (!t) return null;
+      const participants = t.transmission?.match?.participants || [];
+      const homeP = participants.find((p) => p.participantType === "MANDANTE" || p.positionSide === "home") || participants[0];
+      const awayP = participants.find((p) => p.participantType === "VISITANTE" || p.positionSide === "away") || participants[1];
       return {
+        homeTeamId: homeP?.teamId || homeP?.id || null,
+        awayTeamId: awayP?.teamId || awayP?.id || null,
         stats: {
           home: t.statistics?.homeTeam || null,
           away: t.statistics?.awayTeam || null,
@@ -1594,7 +1599,7 @@ async function fetchLiveDetails(match) {
           playTypeLabel: p.playType?.label || null,
           title: p.title || null,
           athlete: p.details?.athlete?.popularName || p.details?.athlete?.name || null,
-          athleticTeam: p.details?.team?.id || null,
+          teamId: p.details?.team?.id || p.details?.teamId || null,
           kind: p.details?.kind || null,
         })),
         detailedScoreboard: t.transmission?.match?.detailedScoreboard || null,
@@ -1614,10 +1619,15 @@ async function fetchLiveDetails(match) {
 
     const { time1, time2 } = match;
 
-    const isHome = (teamId) => teamId === "home" || teamId === "mandante";
+    const isHome = (play) => {
+      if (play.teamId === trv2.homeTeamId) return true;
+      if (play.teamId === trv2.awayTeamId) return false;
+      return null;
+    };
     const deduceTeam = (play) => {
-      if (play.athleticTeam === "home") return "home";
-      if (play.athleticTeam === "away") return "away";
+      const home = isHome(play);
+      if (home === true) return "home";
+      if (home === false) return "away";
       return play.title?.includes(time1) ? "home" : play.title?.includes(time2) ? "away" : null;
     };
 
@@ -1708,8 +1718,10 @@ async function fetchLiveDetails(match) {
         description: p.title || null,
       }));
 
-    const possessionStat = trv2.stats?.home?.ballPossession?.total != null && trv2.stats?.away?.ballPossession?.total != null
-      ? `${trv2.stats.home.ballPossession.total} / ${trv2.stats.away.ballPossession.total}`
+    const bpHome = trv2.stats?.home?.ballPossession?.total;
+    const bpAway = trv2.stats?.away?.ballPossession?.total;
+    const possessionStat = bpHome != null && bpAway != null && (bpHome > 0 || bpAway > 0)
+      ? `${bpHome} / ${bpAway}`
       : null;
 
     const shotsStat = trv2.stats?.home?.goalFinish?.total != null && trv2.stats?.home?.wrongFinish?.total != null
