@@ -938,6 +938,7 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
               startDate: startDate || null,
               dataTexts,
               horaTexts,
+            });
           });
         });
 
