@@ -887,7 +887,8 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
 
             const startDate = jogo.querySelector('meta[itemprop="startDate"]')?.getAttribute("content");
             
-            const link = jogo.querySelector("a.jogo__transmissao--link, a.placar-jogo-link");
+            const link = jogo.querySelector(".jogo__transmissao--link, a.placar-jogo-link");
+            const anchor = link?.tagName === "A" ? link : link?.querySelector("a");
             const dataTexts = Array.from(link?.querySelectorAll(".jogo__informacoes--data") || [])
               .map((el) => el.textContent?.trim())
               .filter(Boolean);
@@ -933,11 +934,10 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
               local: local || null,
               dataLabel,
               hora,
-              href: link?.href || null,
+              href: anchor?.href || null,
               startDate: startDate || null,
               dataTexts,
               horaTexts,
-            });
           });
         });
 
