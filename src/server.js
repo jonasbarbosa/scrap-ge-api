@@ -1500,7 +1500,28 @@ app.get("/ge-live/:matchId?", async (req, res) => {
     attempts++;
   }
   if (!data) {
-    return res.status(504).json({ error: "Dados indisponíveis no momento" });
+    data = {
+      matchId: match.id,
+      score: match.placar1 != null ? `${match.placar1} x ${match.placar2}` : null,
+      status: match.status || "agendado",
+      time1: match.time1,
+      time2: match.time2,
+      placar1: match.placar1,
+      placar2: match.placar2,
+      fase: match.fase,
+      local: match.local || null,
+      hora: match.hora || null,
+      dataLabel: match.dataLabel || null,
+      startDate: match.startDate || match.data || null,
+      halftimeScore: null,
+      goalsByHalf: null,
+      comebackInfo: null,
+      scoringTimeline: [],
+      penalties: null,
+      statistics: { possession: null, shots: null, yellowCards: null, redCards: null, corners: null },
+      extraStats: null,
+      events: [],
+    };
   }
   res.json(data);
 });
