@@ -580,6 +580,7 @@ function mergePartidas(existing, scraped) {
       old.status = np.status;
       old.rodada = np.rodada;
       old.data = np.data;
+      old.startDate = np.startDate ?? old.startDate;
       old.local = np.local;
       if (Object.prototype.hasOwnProperty.call(np, "dataLabel")) old.dataLabel = np.dataLabel ?? null;
       if (Object.prototype.hasOwnProperty.call(np, "hora")) old.hora = np.hora ?? null;
@@ -1479,14 +1480,15 @@ app.get("/ge-live/:matchId?", async (req, res) => {
   if (!match.href) {
     const base = "https://ge.globo.com/futebol/copa-do-mundo/jogo";
     let datePart = "";
-    if (match.data) {
-      const d = new Date(match.data);
+    const dateSrc = match.data || match.startDate;
+    if (dateSrc) {
+      const d = new Date(dateSrc);
       if (!isNaN(d.getTime())) {
         datePart = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
       }
     }
-    const name1 = (match.time1 || match.sigla1 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const name2 = (match.time2 || match.sigla2 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const name1 = (match.time1 || match.sigla1 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, "-");
+    const name2 = (match.time2 || match.sigla2 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, "-");
     if (datePart && name1 && name2) {
       match.href = `${base}/${datePart}/${name1}-${name2}.ghtml`;
     }
