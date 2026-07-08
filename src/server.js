@@ -1144,6 +1144,475 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
 
 // ── HTML template ─────────────────────────────────────────────────
 
+function renderAlbumHtml() {
+  const countries = [
+    { id: "brasil", name: "BRASIL", active: true },
+    { id: "argentina", name: "ARGENTINA", active: false },
+    { id: "franca", name: "FRANÇA", active: false },
+    { id: "alemanha", name: "ALEMANHA", active: false },
+    { id: "espanha", name: "ESPANHA", active: false },
+  ];
+
+  const stickers = [
+    { id: 1, collected: true, name: "Vinícius Jr.", rating: 94, rarity: "LENDÁRIA", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Vinicius_Jr._2022.jpg/440px-Vinicius_Jr._2022.jpg" },
+    { id: 7, collected: false, number: "07" },
+    { id: 2, collected: true, name: "Neymar Jr.", rating: 92, rarity: "LENDÁRIA", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Neymar_%28cropped%29.jpg/440px-Neymar_%28cropped%29.jpg" },
+    { id: 10, collected: false, number: "10" },
+    { id: 3, collected: false, number: "13" },
+    { id: 4, collected: false, number: "18" },
+    { id: 5, collected: true, name: "Marquinhos", rating: 89, rarity: "OURO", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Marquinhos_2018.jpg/440px-Marquinhos_2018.jpg" },
+    { id: 6, collected: false, number: "01" },
+    { id: 8, collected: false, number: "04" },
+    { id: 9, collected: false, number: "05" },
+    { id: 11, collected: false, number: "08" },
+    { id: 12, collected: false, number: "11" },
+  ];
+
+  const generateStickers = () => {
+    return stickers.map(s => {
+      if (s.collected) {
+        const borderColor = s.rarity === "LENDÁRIA" ? "#FFD700" : "#4CAF50";
+        return `
+        <div class="sticker-card collected" style="border-color: ${borderColor};">
+          <div class="sticker-image" style="background-image: url('${s.image}'); background-size: cover; background-position: center;"></div>
+          <div class="sticker-info">
+            <div class="sticker-rating">${s.rating}</div>
+            <div class="sticker-name">${s.name}</div>
+            <div class="sticker-rarity">${s.rarity}</div>
+          </div>
+        </div>`;
+      } else {
+        return `
+        <div class="sticker-card empty">
+          <div class="sticker-number">${s.number}</div>
+        </div>`;
+      }
+    }).join("");
+  };
+
+  const generateTabs = () => {
+    return countries.map(c => `
+      <div class="country-tab ${c.active ? 'active' : ''}" data-country="${c.id}">
+        <div class="country-flag"></div>
+        <span>${c.name}</span>
+      </div>
+    `).join("");
+  };
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Álbum de Figurinhas - Pitaco 2026</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Header */
+  .header {
+    background: #1b5e20;
+    color: white;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .menu-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .menu-icon span {
+    display: block;
+    height: 2px;
+    background: white;
+    border-radius: 2px;
+  }
+  .menu-icon span:nth-child(1) { width: 20px; }
+  .menu-icon span:nth-child(2) { width: 16px; }
+  .menu-icon span:nth-child(3) { width: 20px; }
+  .header-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .coins {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.15);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .coins::before {
+    content: "🪙";
+    font-size: 14px;
+  }
+  .logout-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* Collection Section */
+  .collection-section {
+    background: white;
+    padding: 16px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .collection-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 8px;
+  }
+  .collection-subtitle {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 12px;
+  }
+  .progress-container {
+    width: 100%;
+    height: 8px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-bar {
+    height: 100%;
+    background: #FFD700;
+    width: 46%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  .progress-text {
+    font-size: 12px;
+    color: #999;
+    text-align: right;
+  }
+
+  /* Country Tabs */
+  .country-tabs {
+    display: flex;
+    overflow-x: auto;
+    padding: 12px 16px;
+    gap: 12px;
+    background: white;
+    border-bottom: 1px solid #e0e0e0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .country-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .country-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 60px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  .country-tab.active {
+    opacity: 1;
+  }
+  .country-flag {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    position: relative;
+  }
+  .country-tab.active .country-flag {
+    background: #2e7d32;
+    box-shadow: 0 2px 8px rgba(46, 125.7, 50, 0.3);
+  }
+  .country-tab span {
+    font-size: 10px;
+    font-weight: 600;
+    color: #666;
+    letter-spacing: 0.5px;
+  }
+  .country-tab.active span {
+    color: #2e7d32;
+  }
+
+  /* Sticker Grid */
+  .sticker-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 16px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .sticker-card {
+    aspect-ratio: 3/4;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    border: 2px dashed #ccc;
+    background: white;
+  }
+  .sticker-card.collected {
+    border: 3px solid;
+    box-shadow: 0 4px 12px rgba(0,0zerotransparent) 0%, rgba(0,0,0,0.1) 100%);
+  }
+  .sticker-card.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fafafa;
+  }
+  .sticker-card.empty::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    border: 2px dashed #ddd;
+    border-radius: 8px;
+  }
+  .sticker-image {
+    width: 100%;
+    height: 60%;
+    background-color: #f0f0f0;
+  }
+  .sticker-info {
+    padding: 8px;
+    text-align: center;
+  }
+  .sticker-rating {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  .sticker-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #333;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sticker-rarity {
+    font-size: 9px;
+    color: #999;
+    margin-top: 2px;
+    letter-spacing: 0.5px;
+  }
+  .sticker-number {
+    font-size: 32px;
+    font-weight: 700;
+    color: #ddd;
+  }
+
+  /* Promo Banner */
+  .promo-section {
+    padding: 16px;
+  }
+  .promo-card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .promo-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 8px;
+  }
+  .promo-desc {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .promo-btn {
+    background: #FFD700;
+    color: #1a1a2e;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+  }
+  .promo-image {
+    width: 100%;
+    height: 150px;
+    background: #f0f0f0;
+    border-radius: 12px;
+    margin-top: 16px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 14px;
+  }
+
+  /* Bottom Navigation */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0 12px;
+    border-top: 1px solid #e0e0e0;
+    z-index: 100;
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    text-decoration: none;
+    color: #999;
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    transition: all 0.2s;
+  }
+  .nav-item.active {
+    color: #1a1a2e;
+    background: #FFD700;
+  }
+  .nav-item svg {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+  }
+
+  /* Responsive */
+  @media (max-width: 390px) {
+    .sticker-grid {
+      gap: 8px;
+      padding: 12px;
+    }
+    .sticker-card {
+      border-radius: 8px;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="menu-icon">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="header-title">Álbum de Figurinhas</div>
+    </div>
+    <div class="header-right">
+      <div class="coins">5.600</div>
+      <button class="logout-btn">Sair</button>
+    </div>
+  </div>
+
+  <div class="collection-section">
+    <div class="collection-title">Coleção Mundial 2026</div>
+    <div class="collection-subtitle">Brasil: 12/26 figurinhas</div>
+    <div class="progress-container">
+      <div class="progress-bar"></div>
+    </div>
+    <div class="progress-text">46% completo</div>
+  </div>
+
+  <div class="country-tabs">
+    ${generateTabs()}
+  </div>
+
+  <div class="sticker-grid">
+    ${generateStickers()}
+  </div>
+
+  <div class="promo-section">
+    <div class="promo-card">
+      <div class="promo-title">Aumente sua coleção!</div>
+      <div class="promo-desc">Ganhe moedas participando de palpites e troque por envelopes novos para completar seu álbum.</div>
+      <button class="promo-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+        Abrir Envelopes
+      </button>
+      <div class="promo-image">Imagem - Abrir Envelopes</div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <a href="/" class="nav-item">
+      <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      Início
+    </a>
+    <a href="#" class="nav-item">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+      Bolões
+    </a>
+    <a href="/album" class="nav-item active">
+      <svg viewBox="0 0 24 24"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
+      Stats
+    </a>
+    <a href="#" class="nav-item">
+      <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      Perfil
+    </a>
+  </div>
+</body>
+</html>`;
+}
+
 function renderHtml(data) {
   const dt = new Date(data.updatedAt);
   const dtStr = dt.toLocaleString("pt-BR");
@@ -1803,6 +2272,331 @@ async function fetchLiveDetails(match) {
     await browser.close();
   }
 }
+
+// ── Elenco scrape (one-time, Wikipedia squads) ──
+const ELENCO_FILE = join(DATA_DIR, "elenco.json");
+
+app.post("/admin/scrape-elenco", async (_req, res) => {
+  try {
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto("https://en.wikipedia.org/wiki/2026_FIFA_World_Cup_squads", {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+
+    // Map Wikipedia country names to our team names
+    const nameMap = {
+      "Bangladesh": null, "Bolivia": null, "Bulgaria": null, // skip non-teams
+    };
+
+    const squads = await page.evaluate(() => {
+      const results = {};
+
+      // Walk DOM in order: headings set current country, tables collect players
+      const content = document.querySelector("#mw-content-text") || document.body;
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_ELEMENT, null);
+
+      let currentCountry = "";
+      let node;
+      while ((node = walker.nextNode())) {
+        if (node.tagName === "H2" || node.tagName === "H3") {
+          const span = node.querySelector(".mw-headline");
+          currentCountry = span ? span.textContent.trim() : node.textContent.trim();
+        }
+        if (node.tagName === "TABLE" && node.classList.contains("wikitable")) {
+          const headers = [];
+          node.querySelectorAll("th").forEach((h) => {
+            headers.push(h.textContent.trim());
+          });
+
+          if (!headers.includes("No.") || !headers.includes("Player")) continue;
+
+          const players = [];
+          node.querySelectorAll("tr").forEach((r) => {
+            const allCells = r.querySelectorAll("td, th");
+            if (allCells.length < 3) return;
+            const firstCell = allCells[0];
+            const firstText = firstCell.textContent.trim();
+            if (!firstText || headers.includes(firstText)) return;
+
+            const num = parseInt(firstText) || firstText;
+            const pos = allCells[1]?.textContent.trim() || "";
+            const playerCell = allCells[2];
+
+            // Extract player name and Wikipedia link from the Player column
+            const playerLink = playerCell?.querySelector("a");
+            const nome = (playerLink?.textContent || playerCell?.textContent || "").trim();
+            const wikipediaUrl = playerLink?.href || null;
+            if (!nome || nome.includes("[")) return;
+
+            players.push({
+              nome,
+              posicao: pos,
+              numero: typeof num === "number" ? num : 0,
+              wikipediaUrl,
+            });
+          });
+
+          if (players.length >= 10 && currentCountry) {
+            results[currentCountry] = players;
+          }
+        }
+      }
+      return results;
+    });
+
+    // Map Wikipedia country names → our team names
+    const GE_TO_WIKI = {
+      "Tchéquia": "Czech Republic",
+      "África do Sul": "South Africa",
+      "México": "Mexico",
+      "Coreia do Sul": "South Korea",
+      "Suíça": "Switzerland",
+      "Bósnia e Herzegovina": "Bosnia and Herzegovina",
+      "Canadá": "Canada",
+      "Catar": "Qatar",
+      "Escócia": "Scotland",
+      "Marrocos": "Morocco",
+      "Brasil": "Brazil",
+      "Haiti": "Haiti",
+      "Estados Unidos": "United States",
+      "Austrália": "Australia",
+      "Turquia": "Turkey",
+      "Paraguai": "Paraguay",
+      "Alemanha": "Germany",
+      "Costa do Marfim": "Ivory Coast",
+      "Equador": "Ecuador",
+      "Curaçao": "Curaçao",
+      "Holanda": "Netherlands",
+      "Suécia": "Sweden",
+      "Tunísia": "Tunisia",
+      "Japão": "Japan",
+      "Bélgica": "Belgium",
+      "Irã": "Iran",
+      "Nova Zelândia": "New Zealand",
+      "Egito": "Egypt",
+      "Espanha": "Spain",
+      "Arábia Saudita": "Saudi Arabia",
+      "Uruguai": "Uruguay",
+      "Cabo Verde": "Cape Verde",
+      "França": "France",
+      "Iraque": "Iraq",
+      "Noruega": "Norway",
+      "Senegal": "Senegal",
+      "Argentina": "Argentina",
+      "Áustria": "Austria",
+      "Jordânia": "Jordan",
+      "Argélia": "Algeria",
+      "Portugal": "Portugal",
+      "Uzbequistão": "Uzbekistan",
+      "Colômbia": "Colombia",
+      "República Democrática do Congo": "DR Congo",
+      "Inglaterra": "England",
+      "Gana": "Ghana",
+      "Panamá": "Panama",
+      "Croácia": "Croatia",
+    };
+
+    const elenco = {};
+    let totalPlayers = 0;
+    const missing = [];
+
+    for (const [geName, wikiName] of Object.entries(GE_TO_WIKI)) {
+      const data = squads[wikiName];
+      if (data && data.length > 0) {
+        elenco[geName] = data;
+        totalPlayers += data.length;
+      } else {
+        missing.push(geName);
+        elenco[geName] = [];
+      }
+    }
+
+    writeFileSync(ELENCO_FILE, JSON.stringify(elenco, null, 2));
+    await browser.close();
+
+    res.json({
+      success: true,
+      totalPlayers,
+      teams: Object.keys(elenco).length,
+      missing,
+      file: ELENCO_FILE,
+    });
+  } catch (err) {
+    console.error("[scrape-elenco]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint to populate figurinhas collection from elenco.json
+app.post("/admin/populate-figurinhas", async (_req, res) => {
+  if (!AW_SYNC_ENABLED) return res.status(400).json({ error: "Appwrite not configured" });
+
+  try {
+    const elenco = JSON.parse(readFileSync(ELENCO_FILE, "utf-8"));
+    const client = new Client()
+      .setEndpoint(AW_ENDPOINT)
+      .setProject(AW_PROJECT)
+      .setKey(AW_API_KEY);
+    const db = new Databases(client);
+    const COLL = "figurinhas";
+
+    const results = [];
+    for (const [timeId, jogadores] of Object.entries(elenco)) {
+      if (!jogadores.length) {
+        results.push({ timeId, count: 0, error: "sem dados" });
+        continue;
+      }
+
+      // Delete existing figurinhas for this team then re-create
+      try {
+        const existing = await db.listDocuments(AW_DB_ID, COLL, [Query.equal("timeId", timeId), Query.limit(100)]);
+        for (const doc of existing.documents) {
+          await db.deleteDocument(AW_DB_ID, COLL, doc.$id);
+        }
+      } catch (_) { /* ignore */ }
+
+      let created = 0;
+      for (const j of jogadores) {
+        try {
+          await db.createDocument(AW_DB_ID, COLL, ID.unique(), {
+            timeId,
+            nome: j.nome,
+            posicao: j.posicao || "",
+            numero: j.numero || 0,
+            imagemUrl: j.imagemUrl || null,
+            wikipediaUrl: j.wikipediaUrl || null,
+          });
+          created++;
+        } catch (e) {
+          console.error(`[populate] erro ${timeId}/${j.nome}:`, e.message);
+        }
+      }
+      results.push({ timeId, count: created, total: jogadores.length });
+    }
+
+    res.json({ success: true, results });
+  } catch (err) {
+    console.error("[populate-figurinhas]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Scrape player images from Wikipedia ──
+app.post("/admin/scrape-figurinhas-images", async (_req, res) => {
+  if (!AW_SYNC_ENABLED) return res.status(400).json({ error: "Appwrite not configured" });
+  const { force } = _req.query;
+
+  const client = new Client()
+    .setEndpoint(AW_ENDPOINT)
+    .setProject(AW_PROJECT)
+    .setKey(AW_API_KEY);
+  const db = new Databases(client);
+  const COLL = "figurinhas";
+
+  try {
+    // List all figurinhas
+    let allDocs = [];
+    let offset = 0;
+    const limit = 100;
+    while (true) {
+      const page = await db.listDocuments(AW_DB_ID, COLL, [Query.limit(limit), Query.offset(offset)]);
+      allDocs = allDocs.concat(page.documents);
+      if (page.documents.length < limit) break;
+      offset += limit;
+    }
+    console.log(`[scrape-images] ${allDocs.length} figurinhas encontradas`);
+
+    const browser = await chromium.launch({ headless: true });
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    try {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+
+      // Process sequentially to avoid rate limiting
+      for (const doc of allDocs) {
+        const wikiUrl = doc.wikipediaUrl;
+        if (!wikiUrl) {
+          skipped++;
+          continue;
+        }
+        // Skip if already has image (or was attempted and had no image), unless force=true
+        if (!force && doc.imagemUrl !== null) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          // Navigate to the player's Wikipedia page
+          await page.goto(wikiUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+          await page.waitForTimeout(500);
+
+          const imgUrl = await page.evaluate(() => {
+            // Try infobox image: look for .infobox img or .mw-file-description img
+            const infobox = document.querySelector(".infobox");
+            if (infobox) {
+              const img = infobox.querySelector("img");
+              if (img) {
+                // Prefer srcset for higher res, fallback to src
+                const srcset = img.getAttribute("srcset");
+                if (srcset) {
+                  const candidates = srcset.split(",").map(s => s.trim()).filter(Boolean);
+                  // Pick the largest (last entry)
+                  const largest = candidates[candidates.length - 1].split(/\s+/)[0];
+                  if (largest && largest.startsWith("//")) return "https:" + largest;
+                  if (largest && largest.startsWith("http")) return largest;
+                }
+                const src = img.getAttribute("src");
+                if (src && src.startsWith("//")) return "https:" + src;
+                if (src && src.startsWith("http")) return src;
+              }
+            }
+            return null;
+          });
+
+          if (imgUrl) {
+            // Ensure HTTPS
+            const finalUrl = imgUrl.startsWith("//") ? "https:" + imgUrl : imgUrl;
+            await db.updateDocument(AW_DB_ID, COLL, doc.$id, { imagemUrl: finalUrl });
+            updated++;
+            console.log(`[scrape-images] atualizado: ${doc.nome} (${doc.timeId}) → ${finalUrl}`);
+          } else {
+            console.log(`[scrape-images] sem imagem: ${doc.nome} (${doc.timeId})`);
+            // Mark as empty so we don't retry
+            await db.updateDocument(AW_DB_ID, COLL, doc.$id, { imagemUrl: "" });
+            failed++;
+          }
+        } catch (err) {
+          console.error(`[scrape-images] erro ao processar ${doc.nome}: ${err.message}`);
+          failed++;
+        }
+      }
+    } finally {
+      await browser.close();
+    }
+
+    res.json({
+      success: true,
+      total: allDocs.length,
+      updated,
+      skipped,
+      failed,
+    });
+  } catch (err) {
+    console.error("[scrape-figurinhas-images]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Álbum de Figurinhas Route ──────────────────────────────────
+
+app.get("/album", (req, res) => {
+  res.type("html").send(renderAlbumHtml());
+});
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

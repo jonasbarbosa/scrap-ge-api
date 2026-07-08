@@ -9,6 +9,7 @@
     "dotenv": "^17.4.2",
     "express": "^4.21.0",
     "node-appwrite": "^26.2.0",
+    "node-fetch": "^2.7.0",
     "playwright": "^1.52.0"
   }
 }
