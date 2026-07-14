@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "appwrite-api": {
+      "command": "/bin/bash",
+      "args": ["/Users/jonas/Documents/GitHub/TMCTQS/scripts/mcp-appwrite.sh"],
+      "env": {
+        "APPWRITE_ENDPOINT": "https://appwrite.letsgo.ctqs.com.br/v1",
+        "APPWRITE_PROJECT_ID": "6a197f990028a8d7e383",
+        "UVX_BIN": "/Users/jonas/.local/bin/uvx",
+        "APPWRITE_API_KEY": "standard_af9eefe26f610ebe7903096cf3187396436f675120bfeac1e9a5da273958127fcfcbc28e1e67379fd1021dd0b6e554af2c559b465eb19a24fbf3111022d9579d0c7f3b02e02a7f7bba463777c2233a7e0d43c2049fc50be5d074365a9ff7150991723e75bc54740d4270d3b420bbabe3344fb8f47b66d39e967b68798cafd1dd"
+      }
+    },
+    "coolify": {
+      "command": "npx",
+      "args": ["-y", "@masonator/coolify-mcp"],
+      "env": {
+        "COOLIFY_BASE_URL": "https://coolify.ctqs.com.br",
+        "COOLIFY_ACCESS_TOKEN": "2|o4TOwG99ZI0xnOAqUj2Xf2VSEQhE4aKnEfdjAn7oe99fc214"
+      }
+    }
+  }
+}
