@@ -19,6 +19,32 @@ let cache = { data: null, timestamp: 0 };
 const liveCache = new Map();
 const GE_LIVE_TTL_MS = parseInt(process.env.GE_LIVE_TTL_MS) || 30000; // 30 s default
 
+// Evita launches concorrentes de Chromium (poll + /ge-classificacao + live)
+let scrapeLock = Promise.resolve();
+function withScrapeLock(fn) {
+  const run = scrapeLock.then(fn, fn);
+  scrapeLock = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function chromiumLaunchOptions() {
+  const envArgs = (process.env.PLAYWRIGHT_CHROMIUM_ARGS || "")
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
+  const args = envArgs.length
+    ? envArgs
+    : ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
+  return {
+    headless: true,
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+    args,
+  };
+}
+
 // ── Appwrite config (optional — sync enabled when all vars are set) ──
 
 const AW_ENDPOINT = process.env.APPWRITE_ENDPOINT || "https://appwrite.letsgo.ctqs.com.br/v1";
@@ -600,11 +626,8 @@ function mergePartidas(existing, scraped) {
 // ── Scraping ──────────────────────────────────────────────────────
 
 async function scrape() {
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  return withScrapeLock(async () => {
+  const browser = await chromium.launch(chromiumLaunchOptions());
 
   try {
     const context = await browser.newContext({
@@ -1140,6 +1163,7 @@ const golsM = placar.querySelector(".placar-box__valor--mandante")?.textContent?
   } finally {
     await browser.close();
   }
+  });
 }
 
 // ── HTML template ─────────────────────────────────────────────────
@@ -2060,11 +2084,7 @@ async function fetchLiveDetails(match) {
   if (cached && Date.now() - cached.ts < GE_LIVE_TTL_MS) {
     return cached.data;
   }
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-  });
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
