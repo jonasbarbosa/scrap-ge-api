@@ -19,6 +19,39 @@ let cache = { data: null, timestamp: 0 };
 const liveCache = new Map();
 const GE_LIVE_TTL_MS = parseInt(process.env.GE_LIVE_TTL_MS) || 30000; // 30 s default
 
+const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || "";
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || "https://pitaco2026.ctqs.com.br")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function requireAdmin(req, res, next) {
+  if (!ADMIN_API_TOKEN) {
+    console.error("[auth] ADMIN_API_TOKEN não configurado — bloqueando rota admin");
+    return res.status(503).json({ error: "Admin auth not configured" });
+  }
+  const header = req.get("authorization") || "";
+  const bearer = header.toLowerCase().startsWith("bearer ")
+    ? header.slice(7).trim()
+    : "";
+  const keyHeader = req.get("x-admin-key") || "";
+  const token = bearer || keyHeader;
+  if (!token || token !== ADMIN_API_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+function resolveCorsOrigin(req) {
+  const origin = req.get("origin");
+  if (!origin) return FRONTEND_ORIGINS[0] || "*";
+  if (FRONTEND_ORIGINS.includes(origin)) return origin;
+  if (process.env.NODE_ENV !== "production" && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    return origin;
+  }
+  return null;
+}
+
 // Evita launches concorrentes de Chromium (poll + /ge-classificacao + live)
 let scrapeLock = Promise.resolve();
 function withScrapeLock(fn) {
@@ -412,11 +445,18 @@ async function syncToAppwrite(jogos) {
 // ── CORS & Cache headers ─────────────────────────────────────────
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const allowed = resolveCorsOrigin(req);
+  if (allowed) {
+    res.setHeader("Access-Control-Allow-Origin", allowed);
+    res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Key");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+  if (req.method === "OPTIONS") {
+    if (!allowed && req.get("origin")) return res.sendStatus(403);
+    return res.sendStatus(204);
+  }
   next();
 });
 
@@ -1816,7 +1856,7 @@ init();
 
 // ── Appwrite sync endpoint (manual trigger) ───────────────────────
 
-app.post("/sync-appwrite", async (req, res) => {
+app.post("/sync-appwrite", requireAdmin, async (req, res) => {
   if (!AW_SYNC_ENABLED) {
     return res.status(400).json({ error: "Appwrite sync not configured. Set APPWRITE_PROJECT and APPWRITE_API_KEY." });
   }
@@ -2296,7 +2336,7 @@ async function fetchLiveDetails(match) {
 // ── Elenco scrape (one-time, Wikipedia squads) ──
 const ELENCO_FILE = join(DATA_DIR, "elenco.json");
 
-app.post("/admin/scrape-elenco", async (_req, res) => {
+app.post("/admin/scrape-elenco", requireAdmin, async (_req, res) => {
   try {
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
@@ -2450,7 +2490,7 @@ app.post("/admin/scrape-elenco", async (_req, res) => {
 });
 
 // Endpoint to populate figurinhas collection from elenco.json
-app.post("/admin/populate-figurinhas", async (_req, res) => {
+app.post("/admin/populate-figurinhas", requireAdmin, async (_req, res) => {
   if (!AW_SYNC_ENABLED) return res.status(400).json({ error: "Appwrite not configured" });
 
   try {
@@ -2504,7 +2544,7 @@ app.post("/admin/populate-figurinhas", async (_req, res) => {
 });
 
 // ── Scrape player images from Wikipedia ──
-app.post("/admin/scrape-figurinhas-images", async (_req, res) => {
+app.post("/admin/scrape-figurinhas-images", requireAdmin, async (_req, res) => {
   if (!AW_SYNC_ENABLED) return res.status(400).json({ error: "Appwrite not configured" });
   const { force } = _req.query;
 
