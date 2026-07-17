@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Client, Databases, ID, Query } from "node-appwrite";
+import { Client, Databases, Account, ID, Query } from "node-appwrite";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -24,22 +24,94 @@ const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || "https://pitaco2026.ctq
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
+const AW_PROFILES_COLLECTION = "user_profiles";
+const AW_ADMIN_ROLES_COLLECTION = "admin_roles";
 
-function requireAdmin(req, res, next) {
-  if (!ADMIN_API_TOKEN) {
-    console.error("[auth] ADMIN_API_TOKEN não configurado — bloqueando rota admin");
+function extractBearer(req) {
+  const header = req.get("authorization") || "";
+  if (header.toLowerCase().startsWith("bearer ")) return header.slice(7).trim();
+  return (req.get("x-admin-key") || "").trim();
+}
+
+async function isAppwriteAdminUserId(userId) {
+  if (!awDatabases || !userId) return false;
+  try {
+    const roles = await awDatabases.listDocuments(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, [
+      Query.equal("userId", userId),
+      Query.limit(1),
+    ]);
+    return roles.documents.length > 0;
+  } catch (err) {
+    // Coleção ausente: fallback legado (só até seed-roles)
+    console.warn("[auth] admin_roles indisponível, fallback profile.role:", err.message);
+    try {
+      const profiles = await awDatabases.listDocuments(AW_DB_ID, AW_PROFILES_COLLECTION, [
+        Query.equal("userId", userId),
+        Query.limit(1),
+      ]);
+      return profiles.documents[0]?.role === "admin";
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function resolveAdminAuth(req) {
+  const token = extractBearer(req);
+  if (!token) return { ok: false, status: 401, error: "Unauthorized" };
+
+  if (ADMIN_API_TOKEN && token === ADMIN_API_TOKEN) {
+    return { ok: true, mode: "machine" };
+  }
+
+  if (!AW_PROJECT || !AW_API_KEY) {
+    return { ok: false, status: 503, error: "Appwrite not configured" };
+  }
+
+  try {
+    const userClient = new Client()
+      .setEndpoint(AW_ENDPOINT)
+      .setProject(AW_PROJECT)
+      .setJWT(token);
+    const user = await new Account(userClient).get();
+    const admin = await isAppwriteAdminUserId(user.$id);
+    if (!admin) return { ok: false, status: 403, error: "Forbidden" };
+    return { ok: true, mode: "user", userId: user.$id, user };
+  } catch {
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
+}
+
+async function requireAdmin(req, res, next) {
+  if (!ADMIN_API_TOKEN && !AW_SYNC_ENABLED) {
+    console.error("[auth] ADMIN_API_TOKEN/Appwrite não configurados — bloqueando rota admin");
     return res.status(503).json({ error: "Admin auth not configured" });
   }
-  const header = req.get("authorization") || "";
-  const bearer = header.toLowerCase().startsWith("bearer ")
-    ? header.slice(7).trim()
-    : "";
-  const keyHeader = req.get("x-admin-key") || "";
-  const token = bearer || keyHeader;
-  if (!token || token !== ADMIN_API_TOKEN) {
+  const auth = await resolveAdminAuth(req);
+  if (!auth.ok) return res.status(auth.status || 401).json({ error: auth.error || "Unauthorized" });
+  req.adminAuth = auth;
+  next();
+}
+
+async function requireAppwriteUser(req, res, next) {
+  const token = extractBearer(req);
+  if (!token || !AW_PROJECT) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  next();
+  if (ADMIN_API_TOKEN && token === ADMIN_API_TOKEN) {
+    return res.status(400).json({ error: "Use a user JWT for /me routes" });
+  }
+  try {
+    const userClient = new Client()
+      .setEndpoint(AW_ENDPOINT)
+      .setProject(AW_PROJECT)
+      .setJWT(token);
+    const user = await new Account(userClient).get();
+    req.appwriteUser = user;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 }
 
 function resolveCorsOrigin(req) {
@@ -450,7 +522,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", allowed);
     res.setHeader("Vary", "Origin");
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Key");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   if (req.method === "OPTIONS") {
@@ -1866,6 +1938,206 @@ app.post("/sync-appwrite", requireAdmin, async (req, res) => {
   }
   const result = await syncToAppwrite(jogos);
   res.json(result);
+});
+
+function calcPontosPalpite(palpite1, palpite2, placar1, placar2) {
+  if (palpite1 === placar1 && palpite2 === placar2) return 5;
+  return 0;
+}
+
+async function recalcularPontosPartida(partidaId, placar1, placar2) {
+  if (!awDatabases || placar1 == null || placar2 == null) return { atualizados: 0 };
+  let atualizados = 0;
+  let offset = 0;
+  while (true) {
+    const palpRes = await awDatabases.listDocuments(AW_DB_ID, "palpites", [
+      Query.equal("partidaId", partidaId),
+      Query.limit(100),
+      Query.offset(offset),
+    ]);
+    for (const doc of palpRes.documents) {
+      const pl = doc;
+      const pontos = calcPontosPalpite(pl.palpite1, pl.palpite2, placar1, placar2);
+      await awDatabases.updateDocument(AW_DB_ID, "palpites", doc.$id, { pontos });
+      atualizados++;
+    }
+    if (palpRes.documents.length < 100) break;
+    offset += 100;
+  }
+  return { atualizados };
+}
+
+// ── Admin: roles (coleção admin_roles) ────────────────────────────
+
+app.post("/admin/users/set-role", requireAdmin, async (req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  const userId = String(req.body?.userId || "").trim();
+  const role = String(req.body?.role || "").trim();
+  if (!userId || !["admin", "user"].includes(role)) {
+    return res.status(400).json({ error: "userId and role (admin|user) required" });
+  }
+  try {
+    const existing = await awDatabases.listDocuments(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, [
+      Query.equal("userId", userId),
+      Query.limit(1),
+    ]);
+    if (role === "admin") {
+      if (existing.documents.length === 0) {
+        await awDatabases.createDocument(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, ID.unique(), { userId });
+      }
+    } else if (existing.documents.length > 0) {
+      await awDatabases.deleteDocument(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, existing.documents[0].$id);
+    }
+    // Mantém profile.role alinhado (legado / UI)
+    const profiles = await awDatabases.listDocuments(AW_DB_ID, AW_PROFILES_COLLECTION, [
+      Query.equal("userId", userId),
+      Query.limit(1),
+    ]);
+    if (profiles.documents[0]) {
+      await awDatabases.updateDocument(AW_DB_ID, AW_PROFILES_COLLECTION, profiles.documents[0].$id, { role });
+    }
+    res.json({ ok: true, userId, role });
+  } catch (err) {
+    console.error("[admin/set-role]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/admin/users/admins", requireAdmin, async (_req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  try {
+    const roles = await awDatabases.listDocuments(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, [Query.limit(100)]);
+    res.json({ admins: roles.documents.map((d) => d.userId) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Copia profile.role=admin → admin_roles (migração one-shot). */
+app.post("/admin/users/seed-roles", requireAdmin, async (_req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  try {
+    const profiles = await awDatabases.listDocuments(AW_DB_ID, AW_PROFILES_COLLECTION, [
+      Query.equal("role", "admin"),
+      Query.limit(100),
+    ]);
+    let created = 0;
+    let skipped = 0;
+    for (const p of profiles.documents) {
+      const userId = p.userId;
+      if (!userId) continue;
+      const existing = await awDatabases.listDocuments(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, [
+        Query.equal("userId", userId),
+        Query.limit(1),
+      ]);
+      if (existing.documents.length > 0) {
+        skipped++;
+        continue;
+      }
+      await awDatabases.createDocument(AW_DB_ID, AW_ADMIN_ROLES_COLLECTION, ID.unique(), { userId });
+      created++;
+    }
+    res.json({ ok: true, created, skipped, scanned: profiles.documents.length });
+  } catch (err) {
+    console.error("[admin/seed-roles]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin: partidas CRUD (write só via API key) ───────────────────
+
+app.post("/admin/partidas/update", requireAdmin, async (req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  const id = String(req.body?.id || "").trim();
+  if (!id) return res.status(400).json({ error: "id required" });
+  const allowed = ["placar1", "placar2", "status", "data", "time1", "time2", "grupo", "fase"];
+  const update = {};
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(req.body, k)) update[k] = req.body[k];
+  }
+  if (Object.keys(update).length === 0) return res.status(400).json({ error: "no fields" });
+  try {
+    const doc = await awDatabases.updateDocument(AW_DB_ID, AW_COLLECTION_ID, id, update);
+    let pontos = null;
+    if (update.placar1 != null && update.placar2 != null) {
+      pontos = await recalcularPontosPartida(id, update.placar1, update.placar2);
+    }
+    res.json({ ok: true, partida: doc, pontos });
+  } catch (err) {
+    console.error("[admin/partidas/update]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/admin/partidas/create", requireAdmin, async (req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  const { time1, time2, grupo, fase, data, placar1, placar2, status } = req.body || {};
+  if (!time1 || !time2 || !data) return res.status(400).json({ error: "time1, time2, data required" });
+  try {
+    const doc = await awDatabases.createDocument(AW_DB_ID, AW_COLLECTION_ID, ID.unique(), {
+      time1: String(time1).trim(),
+      time2: String(time2).trim(),
+      grupo: String(grupo || "").trim().toUpperCase(),
+      fase: String(fase || "grupos"),
+      data: new Date(data).toISOString(),
+      placar1: placar1 ?? null,
+      placar2: placar2 ?? null,
+      status: status || "agendado",
+    });
+    res.json({ ok: true, partida: doc });
+  } catch (err) {
+    console.error("[admin/partidas/create]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/admin/partidas/delete", requireAdmin, async (req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  const id = String(req.body?.id || "").trim();
+  if (!id) return res.status(400).json({ error: "id required" });
+  try {
+    await awDatabases.deleteDocument(AW_DB_ID, AW_COLLECTION_ID, id);
+    res.json({ ok: true, id });
+  } catch (err) {
+    console.error("[admin/partidas/delete]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── User: update próprio perfil (campos seguros) ──────────────────
+
+app.patch("/me/profile", requireAppwriteUser, async (req, res) => {
+  if (!awDatabases) return res.status(503).json({ error: "Appwrite not configured" });
+  const userId = req.appwriteUser.$id;
+  const safe = {};
+  if (typeof req.body?.name === "string") safe.name = req.body.name.slice(0, 128);
+  if (typeof req.body?.avatarUrl === "string") safe.avatarUrl = req.body.avatarUrl.slice(0, 2048);
+  if (typeof req.body?.ultimoClaim === "string") safe.ultimoClaim = req.body.ultimoClaim.slice(0, 32);
+  if (typeof req.body?.streakDias === "number") safe.streakDias = Math.max(0, Math.min(3650, req.body.streakDias));
+  // Nunca aceitar role aqui
+  if (Object.keys(safe).length === 0) return res.status(400).json({ error: "no safe fields" });
+  try {
+    const profiles = await awDatabases.listDocuments(AW_DB_ID, AW_PROFILES_COLLECTION, [
+      Query.equal("userId", userId),
+      Query.limit(1),
+    ]);
+    if (!profiles.documents[0]) return res.status(404).json({ error: "profile not found" });
+    const doc = await awDatabases.updateDocument(
+      AW_DB_ID,
+      AW_PROFILES_COLLECTION,
+      profiles.documents[0].$id,
+      safe,
+    );
+    res.json({ ok: true, profile: doc });
+  } catch (err) {
+    console.error("[me/profile]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/me/is-admin", requireAppwriteUser, async (req, res) => {
+  const admin = await isAppwriteAdminUserId(req.appwriteUser.$id);
+  res.json({ isAdmin: admin });
 });
 
 // ── Routes ────────────────────────────────────────────────────────
