@@ -2933,6 +2933,16 @@ app.get("/album", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
+  // Pós-Copa / hibernação: POLL_ENABLED=false (default) evita Chromium 24/7.
+  // Ligar no Coolify com POLL_ENABLED=true só quando precisar sync contínuo.
+  const pollEnabled = !['0', 'false', 'off', 'no'].includes(
+    String(process.env.POLL_ENABLED ?? 'false').toLowerCase(),
+  );
+  if (!pollEnabled) {
+    console.log('[poll] hibernado (POLL_ENABLED=false) — scrape sob demanda via /ge-classificacao e /sync-appwrite');
+    return;
+  }
+
   // Initial scrape, then adaptive polling
   pollScrape().then(() => {
     pollTimer = setInterval(pollScrape, currentInterval);

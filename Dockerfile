@@ -25,12 +25,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     curl \
     ca-certificates \
+    tini \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 # shm pequeno no Docker costuma derrubar o Chromium
 ENV PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-software-rasterizer
+# Default pós-Copa: sem poll automático (evita Chromium/zumbis em idle)
+ENV POLL_ENABLED=false
 
 WORKDIR /app
 COPY package*.json ./
@@ -40,4 +43,6 @@ COPY . .
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/ || exit 1
+
+ENTRYPOINT ["tini", "--"]
 CMD ["node", "src/server.js"]
