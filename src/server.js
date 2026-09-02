@@ -2930,7 +2930,303 @@ app.get("/album", (req, res) => {
   res.type("html").send(renderAlbumHtml());
 });
 
+// ── PicPay / Pote de Ouro Routes ────────────────────────────────────────────
+
+import { criarCobrancaPicPay, consultarStatusPicPay, registrarPendente, buscarPendente, removerPendente } from "./picpay.js";
+
+const AW_COLLECTION_BOLOES = "boloes";
+const AW_COLLECTION_PARTICIPANTES = "bolao_participantes";
+
+// Webhook API Key gerada no Painel Lojista → Configurações → URL de notificação
+const PICPAY_WEBHOOK_API_KEY = process.env.PICPAY_WEBHOOK_API_KEY || "";
+
+/**
+ * POST /api/pagamentos/pix
+ * Gera Link de Pagamento PicPay (com PIX) para entrada em bolão pago.
+ * Requer JWT do usuário no header Authorization.
+ * Response: { paymentLinkId, qrcode, paymentUrl, valor, expiresAt, referenceId }
+ */
+app.post("/api/pagamentos/pix", requireAppwriteUser, async (req, res) => {
+  const corsOrigin = resolveCorsOrigin(req);
+  if (corsOrigin) res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+
+  try {
+    const { bolaoId } = req.body;
+    if (!bolaoId) return res.status(400).json({ error: "bolaoId obrigatório" });
+
+    const user = req.appwriteUser;
+
+    // Buscar dados do bolão
+    const bolao = await awDatabases.getDocument(AW_DB_ID, AW_COLLECTION_BOLOES, bolaoId);
+    if (!bolao) return res.status(404).json({ error: "Bolão não encontrado" });
+    if (bolao.tipo !== "pote_ouro") return res.status(400).json({ error: "Bolão não é do tipo Pote de Ouro" });
+
+    const valor = parseFloat(bolao.valorInscricao || 10);
+    if (!valor || valor <= 0) return res.status(400).json({ error: "Valor de inscrição inválido" });
+
+    // Verificar se já pagou
+    try {
+      const jaExiste = await awDatabases.listDocuments(AW_DB_ID, AW_COLLECTION_BOLAO_PAGAMENTOS, [
+        Query.equal("bolaoId", bolaoId),
+        Query.equal("usuarioId", user.$id),
+        Query.equal("status", "paid"),
+      ]);
+      if (jaExiste.documents.length > 0) {
+        return res.status(409).json({ error: "Usuário já pagou para participar deste bolão" });
+      }
+    } catch {}
+
+    // Gerar ID único para esta transação
+    const referenceId = `bolao_${bolaoId}_user_${user.$id}_${Date.now()}`;
+
+    const callbackUrl = `${process.env.API_BASE_URL || "https://apipitaco2026.ctqs.com.br"}/webhook/picpay`;
+
+    const cobranca = await criarCobrancaPicPay({
+      referenceId,
+      valor,
+      callbackUrl,
+      comprador: {
+        firstName: user.name?.split(" ")[0] || "Participante",
+        lastName: user.name?.split(" ").slice(1).join(" ") || "",
+        email: user.email || "",
+      },
+    });
+
+    // Salvar registro de pagamento pendente no Appwrite
+    try {
+      await awDatabases.createDocument(AW_DB_ID, AW_COLLECTION_BOLAO_PAGAMENTOS, referenceId, {
+        bolaoId,
+        usuarioId: user.$id,
+        valor,
+        status: "pending",
+        referenceId,
+        paymentUrl: cobranca.paymentUrl,
+        expiresAt: cobranca.expiresAt,
+      });
+    } catch (err) {
+      console.warn("[picpay] Falha ao salvar pagamento pendente:", err.message);
+    }
+
+    return res.json({
+      referenceId,
+      qrcode: cobranca.qrcode,
+      paymentUrl: cobranca.paymentUrl,
+      valor,
+      expiresAt: cobranca.expiresAt,
+    });
+  } catch (err) {
+    console.error("[picpay] Erro ao criar cobrança:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/pagamentos/status/:referenceId
+ * Consulta status de um pagamento (polling do frontend).
+ */
+app.get("/api/pagamentos/status/:referenceId", requireAppwriteUser, async (req, res) => {
+  const corsOrigin = resolveCorsOrigin(req);
+  if (corsOrigin) res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+
+  try {
+    const { referenceId } = req.params;
+    const resultado = await consultarCobrancaPicPay(referenceId);
+    return res.json(resultado);
+  } catch (err) {
+    console.error("[picpay] Erro ao consultar status:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /webhook/picpay
+ * Recebe notificação de pagamento confirmado do PicPay.
+ * Adiciona automaticamente o usuário como participante do bolão.
+ */
+app.post("/webhook/picpay", async (req, res) => {
+  try {
+    const { referenceId, authorizationId, cancellationId } = req.body;
+
+    if (!referenceId) return res.status(400).json({ error: "referenceId obrigatório" });
+
+    const isPaid = !!authorizationId && !cancellationId;
+    const isCancelled = !!cancellationId;
+
+    console.log(`[webhook/picpay] referenceId=${referenceId} paid=${isPaid} cancelled=${isCancelled}`);
+
+    if (!awDatabases) return res.status(200).json({ ok: true, warning: "Appwrite não configurado" });
+
+    // Buscar registro do pagamento
+    let pagamento;
+    try {
+      pagamento = await awDatabases.getDocument(AW_DB_ID, AW_COLLECTION_BOLAO_PAGAMENTOS, referenceId);
+    } catch {
+      console.warn("[webhook/picpay] Pagamento não encontrado no Appwrite:", referenceId);
+      return res.status(200).json({ ok: true });
+    }
+
+    if (isPaid) {
+      // Atualizar status do pagamento para 'paid'
+      await awDatabases.updateDocument(AW_DB_ID, AW_COLLECTION_BOLAO_PAGAMENTOS, referenceId, {
+        status: "paid",
+        authorizationId,
+        paidAt: new Date().toISOString(),
+      }).catch(() => {});
+
+      // Adicionar participante ao bolão
+      const participanteId = `${pagamento.bolaoId}_${pagamento.usuarioId}`;
+      try {
+        await awDatabases.createDocument(AW_DB_ID, AW_COLLECTION_PARTICIPANTES, participanteId, {
+          bolaoId: pagamento.bolaoId,
+          usuarioId: pagamento.usuarioId,
+          role: "member",
+        });
+        console.log(`[webhook/picpay] Participante adicionado: ${participanteId}`);
+      } catch (err) {
+        // Pode já existir — não é erro crítico
+        if (!err.message?.includes("409")) {
+          console.error("[webhook/picpay] Erro ao adicionar participante:", err.message);
+        }
+      }
+    } else if (isCancelled) {
+      await awDatabases.updateDocument(AW_DB_ID, AW_COLLECTION_BOLAO_PAGAMENTOS, referenceId, {
+        status: "cancelled",
+        cancellationId,
+      }).catch(() => {});
+    }
+
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error("[webhook/picpay] Erro inesperado:", err);
+    return res.status(200).json({ ok: true }); // sempre 200 para o PicPay não retentar
+  }
+});
+
+// CORS preflight para rotas de pagamento
+app.options("/api/pagamentos/pix", (req, res) => {
+  const corsOrigin = resolveCorsOrigin(req);
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+  res.sendStatus(204);
+});
+
+app.options("/api/pagamentos/status/:referenceId", (req, res) => {
+  const corsOrigin = resolveCorsOrigin(req);
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+  res.sendStatus(204);
+});
+
+// ── Sandbox Test Endpoint ─────────────────────────────────────────────────────
+// Disponível apenas quando PICPAY_SANDBOX=true
+// Simula o webhook de pagamento aprovado para testes locais (sem ngrok)
+
+app.post("/api/pagamentos/simular/:paymentLinkId", requireAppwriteUser, async (req, res) => {
+  const corsOrigin = resolveCorsOrigin(req);
+  if (corsOrigin) res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+
+  if (process.env.PICPAY_SANDBOX !== "true") {
+    return res.status(403).json({ error: "Simulação disponível apenas em modo sandbox" });
+  }
+
+  const { paymentLinkId } = req.params;
+  const pendente = buscarPendente(paymentLinkId);
+
+  if (!pendente) {
+    return res.status(404).json({ error: `Nenhum pagamento pendente para paymentLinkId: ${paymentLinkId}` });
+  }
+
+  // Simular payload do webhook PicPay
+  const webhookPayload = {
+    type: "PAYMENT",
+    data: {
+      transaction: {
+        id: `sandbox-tx-${Date.now()}`,
+        status: "PAYED",
+        amount: 1000,
+        paymentType: "PIX",
+        originalTransactionId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      charge: {
+        paymentLinkId,
+        qrCode: "sandbox-qrcode",
+        expiresAt: null,
+        amount: 1000,
+        checkoutLink: `https://link.picpay.com/p/${paymentLinkId}`,
+      },
+    },
+    eventDate: new Date().toISOString(),
+  };
+
+  // Processar localmente (mesmo código do webhook real)
+  const { bolaoId, usuarioId, usuarioNome, referenceId } = pendente;
+  const participanteId = `${bolaoId}_${usuarioId}`;
+  const transactionId = webhookPayload.data.transaction.id;
+
+  console.log(`[sandbox] Simulando pagamento confirmado para bolão ${bolaoId} user ${usuarioId}`);
+
+  if (awDatabases) {
+    try {
+      await awDatabases.updateDocument(AW_DB_ID, AW_COLLECTION_PARTICIPANTES, participanteId, {
+        statusPagamento: "confirmado",
+        transactionId,
+        paymentLinkId,
+        valorPago: webhookPayload.data.transaction.amount / 100,
+        pagoEm: new Date().toISOString(),
+      });
+    } catch {
+      try {
+        await awDatabases.createDocument(AW_DB_ID, AW_COLLECTION_PARTICIPANTES, participanteId, {
+          bolaoId,
+          usuarioId,
+          usuarioNome: usuarioNome || "Participante",
+          statusPagamento: "confirmado",
+          transactionId,
+          paymentLinkId,
+          valorPago: webhookPayload.data.transaction.amount / 100,
+          pagoEm: new Date().toISOString(),
+          role: "member",
+        });
+      } catch (err) {
+        console.error("[sandbox] Erro ao registrar participante:", err.message);
+        return res.status(500).json({ error: err.message });
+      }
+    }
+  }
+
+  removerPendente(paymentLinkId);
+  console.log(`[sandbox] ✅ Pagamento simulado com sucesso: ${transactionId}`);
+
+  return res.json({
+    ok: true,
+    sandbox: true,
+    transactionId,
+    bolaoId,
+    usuarioId,
+    message: "Pagamento simulado com sucesso — participante confirmado no Appwrite",
+  });
+});
+
+app.options("/api/pagamentos/simular/:paymentLinkId", (req, res) => {
+  const corsOrigin = resolveCorsOrigin(req);
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+  res.sendStatus(204);
+});
+
 app.listen(PORT, () => {
+
   console.log(`Server running on port ${PORT}`);
 
   // Pós-Copa / hibernação: POLL_ENABLED=false (default) evita Chromium 24/7.
