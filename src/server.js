@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { Client, Databases, Account, ID, Query } from "node-appwrite";
+import { criarCobrancaPicPay, consultarStatusPicPay, registrarPendente, buscarPendente, removerPendente } from "./picpay.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -2932,10 +2933,9 @@ app.get("/album", (req, res) => {
 
 // ── PicPay / Pote de Ouro Routes ────────────────────────────────────────────
 
-import { criarCobrancaPicPay, consultarStatusPicPay, registrarPendente, buscarPendente, removerPendente } from "./picpay.js";
-
 const AW_COLLECTION_BOLOES = "boloes";
 const AW_COLLECTION_PARTICIPANTES = "bolao_participantes";
+const AW_COLLECTION_BOLAO_PAGAMENTOS = "bolao_pagamentos";
 
 // Webhook API Key gerada no Painel Lojista → Configurações → URL de notificação
 const PICPAY_WEBHOOK_API_KEY = process.env.PICPAY_WEBHOOK_API_KEY || "";
