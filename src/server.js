@@ -154,8 +154,9 @@ function chromiumLaunchOptions() {
 // ── Appwrite config (optional — sync enabled when all vars are set) ──
 
 const AW_ENDPOINT = process.env.APPWRITE_ENDPOINT || "https://appwrite.letsgo.ctqs.com.br/v1";
-const AW_PROJECT = process.env.APPWRITE_PROJECT || "";
+const AW_PROJECT = process.env.APPWRITE_PROJECT || "6a197f990028a8d7e383";
 const AW_API_KEY = process.env.APPWRITE_API_KEY || "";
+
 const AW_DB_ID = process.env.APPWRITE_DATABASE_ID || "pitaco2026";
 const AW_COLLECTION_ID = process.env.APPWRITE_COLLECTION_ID || "partidas";
 const AW_SYNC_ENABLED = !!(AW_PROJECT && AW_API_KEY);
